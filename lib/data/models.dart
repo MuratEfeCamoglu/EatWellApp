@@ -67,6 +67,28 @@ class UserProfile {
 
 enum MealType { breakfast, lunch, dinner, snack }
 
+/// Dish family used to group the food catalog into browsable sections.
+/// Declaration order is the order sections appear in.
+enum FoodCategory {
+  kahvaltilik('Kahvaltılık', Icons.egg_alt_rounded),
+  corba('Çorbalar', Icons.soup_kitchen_rounded),
+  et('Et Yemekleri', Icons.kebab_dining_rounded),
+  balik('Balık & Deniz Ürünleri', Icons.set_meal_rounded),
+  sebze('Sebze Yemekleri', Icons.eco_rounded),
+  pilav('Pilav, Makarna & Baklagil', Icons.rice_bowl_rounded),
+  hamurIsi('Hamur İşleri & Ekmek', Icons.bakery_dining_rounded),
+  fastFood('Fast Food & Sokak Lezzetleri', Icons.lunch_dining_rounded),
+  salata('Salata & Meze', Icons.local_florist_rounded),
+  tatli('Tatlılar', Icons.cake_rounded),
+  icecek('İçecekler', Icons.local_cafe_rounded),
+  atistirmalik('Meyve & Atıştırmalık', Icons.spa_rounded);
+
+  const FoodCategory(this.label, this.icon);
+
+  final String label;
+  final IconData icon;
+}
+
 class MealEntry {
   const MealEntry({
     required this.type,
@@ -114,6 +136,7 @@ class FoodItem {
       MealType.snack,
     },
     this.icon = Icons.restaurant_rounded,
+    this.category = FoodCategory.atistirmalik,
   });
 
   final String name;
@@ -131,6 +154,33 @@ class FoodItem {
   /// A food-specific icon (rather than one cycled arbitrarily by list
   /// position) so visually similar items are recognizable at a glance.
   final IconData icon;
+
+  /// Which catalog section this food is listed under.
+  final FoodCategory category;
+
+  /// Bundled photo for this food, derived from its name. Callers fall back
+  /// to [icon] when no such asset exists (e.g. barcode-catalog products).
+  String get imageAsset => 'assets/foods/${foodImageSlug(name)}.jpg';
+}
+
+/// ASCII file-name slug for a food name, e.g. 'Çılbır' -> 'cilbir'.
+/// Kept in sync with tool/fetch_food_images.py.
+String foodImageSlug(String name) {
+  const map = {
+    'ç': 'c', 'Ç': 'c', 'ğ': 'g', 'Ğ': 'g', 'ı': 'i', 'I': 'i', 'İ': 'i',
+    'ö': 'o', 'Ö': 'o', 'ş': 's', 'Ş': 's', 'ü': 'u', 'Ü': 'u',
+  };
+  final ascii = name.split('').map((c) => map[c] ?? c).join().toLowerCase();
+  return ascii.replaceAll(RegExp('[^a-z0-9]+'), '_').replaceAll(RegExp(r'^_+|_+$'), '');
+}
+
+enum RecipeDifficulty {
+  kolay('Kolay'),
+  orta('Orta'),
+  zor('Zor');
+
+  const RecipeDifficulty(this.label);
+  final String label;
 }
 
 class Recipe {
@@ -142,15 +192,43 @@ class Recipe {
     required this.tag,
     required this.ingredients,
     required this.steps,
+    required this.proteinG,
+    required this.carbsG,
+    required this.fatG,
+    this.servings = 2,
+    this.difficulty = RecipeDifficulty.kolay,
   });
 
   final String title;
   final String description;
   final int minutes;
+
+  /// Calories and macros are per serving.
   final int calories;
+  final double proteinG;
+  final double carbsG;
+  final double fatG;
+
   final String tag;
+  final int servings;
+  final RecipeDifficulty difficulty;
   final List<String> ingredients;
   final List<String> steps;
+
+  /// Bundled 4:3 photo, derived from the title (see tool/fetch_food_images.py).
+  String get imageAsset => 'assets/recipes/${foodImageSlug(title)}.jpg';
+
+  /// One serving of this recipe as a loggable food, so it can be added to
+  /// a meal through the same path as catalog foods.
+  FoodItem get asServing => FoodItem(
+        name: title,
+        brand: 'Tarif',
+        caloriesPer100g: calories,
+        proteinG: proteinG,
+        carbsG: carbsG,
+        fatG: fatG,
+        servingLabel: '1 porsiyon',
+      );
 }
 
 class WeightEntry {

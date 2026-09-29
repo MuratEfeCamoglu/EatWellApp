@@ -23,6 +23,10 @@ class MainShell extends StatefulWidget {
 class _MainShellState extends State<MainShell> {
   late int _index = widget.initialIndex;
 
+  /// Tabs are built the first time they're opened (then kept alive), so
+  /// startup doesn't pay for the recipe grid, charts, etc. up front.
+  late final Set<int> _visited = {widget.initialIndex};
+
   static const _tabs = [
     HomeScreen(),
     DiaryScreen(),
@@ -45,7 +49,17 @@ class _MainShellState extends State<MainShell> {
     final scheme = Theme.of(context).colorScheme;
     return Scaffold(
       extendBody: true,
-      body: IndexedStack(index: _index, children: _tabs),
+      body: IndexedStack(
+        index: _index,
+        children: [
+          for (var i = 0; i < _tabs.length; i++)
+            // Pause animations (e.g. the water wave) in hidden tabs.
+            TickerMode(
+              enabled: i == _index,
+              child: _visited.contains(i) ? _tabs[i] : const SizedBox.shrink(),
+            ),
+        ],
+      ),
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
       floatingActionButton: (_index == 0 || _index == 1)
           ? Padding(
@@ -63,7 +77,10 @@ class _MainShellState extends State<MainShell> {
           : null,
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _index,
-        onTap: (i) => setState(() => _index = i),
+        onTap: (i) => setState(() {
+          _index = i;
+          _visited.add(i);
+        }),
         items: List.generate(
           _labels.length,
           (i) => BottomNavigationBarItem(

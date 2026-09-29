@@ -18,21 +18,26 @@ class DengeApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return ChangeNotifierProvider.value(
       value: AppState.instance,
-      child: Consumer<AppState>(
-        builder: (context, state, _) {
+      // Rebuild the app root only when an app-wide display setting changes,
+      // not on every AppState change (water, meals, favorites...) — those
+      // only need to rebuild the screens that watch them.
+      child: Selector<AppState, (ThemeMode, bool, TextScaleOption)>(
+        selector: (_, s) => (s.themeMode, s.reduceMotion, s.textScale),
+        builder: (context, settings, _) {
+          final (themeMode, reduceMotion, textScale) = settings;
           return MaterialApp(
             title: 'Denge',
             debugShowCheckedModeBanner: false,
-            themeMode: state.themeMode,
-            theme: AppTheme.light(reduceMotion: state.reduceMotion),
-            darkTheme: AppTheme.dark(reduceMotion: state.reduceMotion),
+            themeMode: themeMode,
+            theme: AppTheme.light(reduceMotion: reduceMotion),
+            darkTheme: AppTheme.dark(reduceMotion: reduceMotion),
             initialRoute: AppRoutes.splash,
             routes: AppRoutes.routes,
             builder: (context, child) {
               final mediaQuery = MediaQuery.of(context);
               return MediaQuery(
                 data: mediaQuery.copyWith(
-                  textScaler: TextScaler.linear(state.textScale.scale),
+                  textScaler: TextScaler.linear(textScale.scale),
                 ),
                 child: child!,
               );

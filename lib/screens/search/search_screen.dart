@@ -8,6 +8,7 @@ import '../../data/mock_data.dart';
 import '../../router.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/app_back_button.dart';
+import '../../widgets/food_image.dart';
 
 const _mealLabels = {
   MealType.breakfast: 'Kahvaltı',
@@ -54,6 +55,9 @@ class _SearchScreenState extends State<SearchScreen> {
   String _query = '';
   late final MealType _meal = widget.initialMeal ?? defaultMealForNow();
 
+  /// Selected category filter; null shows every category as sections.
+  FoodCategory? _category;
+
   static const _popularChipsByMeal = {
     MealType.breakfast: ['Simit', 'Menemen', 'Peynir', 'Bal'],
     MealType.lunch: ['Mercimek çorbası', 'Pilav', 'Tavuk sote', 'Mantı'],
@@ -78,13 +82,36 @@ class _SearchScreenState extends State<SearchScreen> {
 
   /// Only foods that make sense for [_meal] — searching while adding to
   /// "Kahvaltı" shouldn't surface dinner-only dishes and vice versa.
+  Iterable<FoodItem> get _inMeal =>
+      MockData.searchResults.where((f) => f.meals.contains(_meal));
+
+  /// Categories that have at least one food for [_meal], in display order.
+  List<FoodCategory> get _availableCategories {
+    final present = _inMeal.map((f) => f.category).toSet();
+    return FoodCategory.values.where(present.contains).toList();
+  }
+
   List<FoodItem> get _filtered {
-    final inMeal = MockData.searchResults.where((f) => f.meals.contains(_meal));
-    if (_query.isEmpty) return inMeal.toList();
     final q = _query.toLowerCase();
-    return inMeal
-        .where((f) => f.name.toLowerCase().contains(q) || f.brand.toLowerCase().contains(q))
+    return _inMeal
+        .where((f) => _category == null || f.category == _category)
+        .where((f) =>
+            q.isEmpty || f.name.toLowerCase().contains(q) || f.brand.toLowerCase().contains(q))
         .toList();
+  }
+
+  /// [foods] grouped under their category headers: each entry is either a
+  /// [FoodCategory] (section header) or a [FoodItem] (row).
+  List<Object> _grouped(List<FoodItem> foods) {
+    final entries = <Object>[];
+    for (final category in FoodCategory.values) {
+      final inCategory = foods.where((f) => f.category == category);
+      if (inCategory.isEmpty) continue;
+      entries
+        ..add(category)
+        ..addAll(inCategory);
+    }
+    return entries;
   }
 
   void _setQuery(String value) => setState(() => _query = value);
@@ -176,6 +203,8 @@ class _SearchScreenState extends State<SearchScreen> {
     final theme = Theme.of(context);
     final colors = context.dengeColors;
     final results = _filtered;
+    final entries = _grouped(results);
+    final categories = _availableCategories;
 
     return Scaffold(
       body: SafeArea(
@@ -284,35 +313,50 @@ class _SearchScreenState extends State<SearchScreen> {
                 ],
               ),
             ),
-            const SizedBox(height: 8),
+            // Category filter chips.
+            SizedBox(
+              height: 56,
+              child: ListView.separated(
+                padding: const EdgeInsets.fromLTRB(24, 12, 24, 4),
+                scrollDirection: Axis.horizontal,
+                itemCount: categories.length + 1,
+                separatorBuilder: (_, __) => const SizedBox(width: 8),
+                itemBuilder: (context, i) {
+                  final category = i == 0 ? null : categories[i - 1];
+                  return _CategoryChip(
+                    label: category?.label ?? 'Tümü',
+                    icon: category?.icon ?? Icons.apps_rounded,
+                    selected: _category == category,
+                    onTap: () => setState(() => _category = category),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 4),
             Expanded(
               child: results.isEmpty
                   ? _SearchEmptyState(
                       query: _query,
                       onScanBarcode: () => Navigator.of(context).push(AppRoutes.pushBarcode(initialMeal: _meal)),
                     )
-                  : ListView.separated(
-                      padding: const EdgeInsets.fromLTRB(24, 0, 24, 16),
-                      itemCount: results.length + 1,
-                      separatorBuilder: (_, __) => const SizedBox(height: 0),
+                  : ListView.builder(
+                      padding: const EdgeInsets.fromLTRB(24, 0, 24, 96),
+                      itemCount: entries.length,
                       itemBuilder: (context, i) {
-                        if (i == 0) {
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 8),
-                            child: Text(
-                              _query.isEmpty ? 'Son eklenenler' : 'Sonuçlar',
-                              style: theme.textTheme.bodySmall
-                                  ?.copyWith(fontWeight: FontWeight.w800, color: theme.colorScheme.onSurface),
-                            ),
+                        final entry = entries[i];
+                        if (entry is FoodCategory) {
+                          return _CategoryHeader(
+                            category: entry,
+                            count: results.where((f) => f.category == entry).length,
+                            first: i == 0,
                           );
                         }
-                        final food = results[i - 1];
-                        final tint = _rowTints(context)[(i - 1) % 4];
+                        final food = entry as FoodItem;
+                        final tint = _rowTints(context)[i % 4];
                         return _FoodRow(
                           food: food,
                           bg: tint.bg,
                           fg: tint.fg,
-                          icon: food.icon,
                           onTap: () => Navigator.of(context)
                               .push(AppRoutes.pushFoodDetail(food, initialMeal: _meal)),
                           onQuickAdd: () => _quickAdd(food),
@@ -366,12 +410,93 @@ class _SquareIconButton extends StatelessWidget {
   }
 }
 
+class _CategoryChip extends StatelessWidget {
+  const _CategoryChip({
+    required this.label,
+    required this.icon,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final IconData icon;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final colors = context.dengeColors;
+    final fg = selected ? scheme.onPrimary : scheme.onSurface;
+    return Material(
+      color: selected ? scheme.primary : scheme.surface,
+      shape: StadiumBorder(
+        side: selected ? BorderSide.none : BorderSide(color: colors.divider),
+      ),
+      child: InkWell(
+        customBorder: const StadiumBorder(),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 18, color: fg),
+              const SizedBox(width: 6),
+              Text(label,
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: fg)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CategoryHeader extends StatelessWidget {
+  const _CategoryHeader({
+    required this.category,
+    required this.count,
+    required this.first,
+  });
+
+  final FoodCategory category;
+  final int count;
+  final bool first;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = context.dengeColors;
+    return Padding(
+      padding: EdgeInsets.only(top: first ? 4 : 20, bottom: 4),
+      child: Row(
+        children: [
+          Icon(category.icon, size: 20, color: theme.colorScheme.primary),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(category.label,
+                style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            decoration: BoxDecoration(
+              color: colors.trackBackground,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text('$count', style: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w800)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _FoodRow extends StatelessWidget {
   const _FoodRow({
     required this.food,
     required this.bg,
     required this.fg,
-    required this.icon,
     required this.onTap,
     required this.onQuickAdd,
   });
@@ -379,7 +504,6 @@ class _FoodRow extends StatelessWidget {
   final FoodItem food;
   final Color bg;
   final Color fg;
-  final IconData icon;
   final VoidCallback onTap;
   final VoidCallback onQuickAdd;
 
@@ -400,12 +524,7 @@ class _FoodRow extends StatelessWidget {
                     onTap: onTap,
                     child: Row(
                       children: [
-                        Container(
-                          width: 48,
-                          height: 48,
-                          decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(14)),
-                          child: Icon(icon, color: fg, size: 24),
-                        ),
+                        FoodImage(food: food, size: 52, radius: 14, bg: bg, fg: fg),
                         const SizedBox(width: 12),
                         Expanded(
                           child: Column(
@@ -572,14 +691,12 @@ class _PhotoMatchSheet extends StatelessWidget {
                     ),
                     child: Row(
                       children: [
-                        Container(
-                          width: 44,
-                          height: 44,
-                          decoration: BoxDecoration(
-                            color: colors.trackBackground,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Icon(food.icon, color: theme.colorScheme.onSurface),
+                        FoodImage(
+                          food: food,
+                          size: 44,
+                          radius: 12,
+                          bg: colors.trackBackground,
+                          fg: theme.colorScheme.onSurface,
                         ),
                         const SizedBox(width: 12),
                         Expanded(

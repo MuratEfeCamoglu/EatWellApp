@@ -7,6 +7,7 @@ import '../../data/mock_data.dart';
 import '../../data/models.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/weight_input_dialog.dart';
 
 /// İlerleme (Progress) tab: weight trend chart, goal progress and a couple
 /// of streak/water stat tiles, driven by [AppState]'s real (initially
@@ -31,45 +32,11 @@ class _ProgressScreenState extends State<ProgressScreen> {
   String _shortDate(DateTime d) => '${d.day} ${_monthShort[d.month - 1]}';
 
   Future<void> _logWeight(BuildContext context, double currentWeight) async {
-    final controller =
-        TextEditingController(text: currentWeight.round().toString());
-    final result = await showDialog<double>(
-      context: context,
-      builder: (context) {
-        String? error;
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            void submit() {
-              final value = double.tryParse(controller.text.replaceAll(',', '.'));
-              if (value == null || value < 30 || value > 300) {
-                setDialogState(() => error = 'Geçerli bir kilo girin');
-                return;
-              }
-              Navigator.of(context).pop(value);
-            }
-
-            return AlertDialog(
-              title: const Text('Kilonu güncelle'),
-              content: TextField(
-                controller: controller,
-                autofocus: true,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                decoration: InputDecoration(suffixText: 'kg', errorText: error),
-                onSubmitted: (_) => submit(),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('Vazgeç'),
-                ),
-                ElevatedButton(onPressed: submit, child: const Text('Kaydet')),
-              ],
-            );
-          },
-        );
-      },
+    final result = await showWeightInputDialog(
+      context,
+      title: 'Kilonu güncelle',
+      initialKg: currentWeight,
     );
-    controller.dispose();
     if (result != null && context.mounted) {
       context.read<AppState>().logWeight(result);
     }

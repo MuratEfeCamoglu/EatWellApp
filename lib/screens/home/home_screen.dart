@@ -9,6 +9,7 @@ import '../../router.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/section_card.dart';
+import '../../widgets/water_animations.dart';
 
 /// Ports project/Home.dc.html (light) and project/Home-dark.dc.html (dark)
 /// from the design canvas: greeting header with streak pill + avatar,
@@ -391,6 +392,11 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
         const SizedBox(height: 12),
+        WaterWaveBar(
+          progress: waterGlasses / MockData.waterGlassesGoal,
+          label: '%${(waterGlasses * 100 / MockData.waterGlassesGoal).round()}',
+        ),
+        const SizedBox(height: 8),
         GridView.builder(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
@@ -404,10 +410,13 @@ class _HomeScreenState extends State<HomeScreen> {
           itemBuilder: (context, i) {
             final full = i < waterGlasses;
             final next = i == waterGlasses;
-            return _WaterGlassButton(
+            return WaterGlass(
               full: full,
               next: next,
-              onTap: () => _pickGlass(i, waterGlasses),
+              onTap: () {
+                HapticFeedback.lightImpact();
+                _pickGlass(i, waterGlasses);
+              },
             );
           },
         ),
@@ -674,63 +683,3 @@ class _MacroBar extends StatelessWidget {
   }
 }
 
-/// One glass in the 10-glass water grid, in one of three visual states:
-/// full (filled droplet), next (dashed outline — the next tap target), or
-/// empty (faint outline).
-class _WaterGlassButton extends StatefulWidget {
-  const _WaterGlassButton({
-    required this.full,
-    required this.next,
-    required this.onTap,
-  });
-
-  final bool full;
-  final bool next;
-  final VoidCallback onTap;
-
-  @override
-  State<_WaterGlassButton> createState() => _WaterGlassButtonState();
-}
-
-class _WaterGlassButtonState extends State<_WaterGlassButton> {
-  void _handleTap() {
-    HapticFeedback.lightImpact();
-    widget.onTap();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.dengeColors;
-    final color = widget.full || widget.next ? colors.water : colors.divider;
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: _handleTap,
-        child: Center(
-          child: TweenAnimationBuilder<double>(
-            tween: Tween(begin: 0.7, end: widget.full ? 1.0 : 0.85),
-            duration: const Duration(milliseconds: 260),
-            curve: Curves.elasticOut,
-            builder: (context, scale, child) => Transform.scale(scale: scale, child: child),
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 180),
-              transitionBuilder: (child, animation) =>
-                  ScaleTransition(scale: animation, child: child),
-              child: Icon(
-                widget.full
-                    ? Icons.local_drink_rounded
-                    : (widget.next
-                        ? Icons.add_circle_outline_rounded
-                        : Icons.local_drink_outlined),
-                key: ValueKey('${widget.full}-${widget.next}'),
-                color: color,
-                size: 26,
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}

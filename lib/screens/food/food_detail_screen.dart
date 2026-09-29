@@ -8,6 +8,7 @@ import '../../data/models.dart';
 import '../search/search_screen.dart' show defaultMealForNow;
 import '../../theme/app_colors.dart';
 import '../../widgets/app_back_button.dart';
+import '../../widgets/food_image.dart';
 import '../../widgets/section_card.dart';
 
 /// Ports project/FoodDetail.dc.html (light, theme-aware for
@@ -122,14 +123,12 @@ class _FoodDetailScreenState extends State<FoodDetailScreen> {
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
-                        Container(
-                          width: 72,
-                          height: 72,
-                          decoration: BoxDecoration(
-                            color: colors.streakContainer,
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Icon(Icons.ramen_dining_rounded, size: 40, color: colors.streak),
+                        FoodImage(
+                          food: food,
+                          size: 88,
+                          radius: 20,
+                          bg: colors.streakContainer,
+                          fg: colors.streak,
                         ),
                         const SizedBox(width: 16),
                         Expanded(

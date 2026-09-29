@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 
+import 'extra_foods.dart';
 import 'models.dart';
+import 'more_foods.dart';
+import 'recipes.dart';
 
 const _breakfast = {MealType.breakfast};
 const _dinner = {MealType.dinner};
@@ -33,6 +36,7 @@ class MockData {
       servingLabel: '1 porsiyon (200 g)',
       meals: _breakfast,
       icon: Icons.egg_alt_rounded,
+      category: FoodCategory.kahvaltilik,
     ),
     FoodItem(
       name: 'Haşlanmış Yumurta',
@@ -44,6 +48,7 @@ class MockData {
       servingLabel: '1 adet (50 g)',
       meals: _breakfastSnack,
       icon: Icons.egg_rounded,
+      category: FoodCategory.kahvaltilik,
     ),
     FoodItem(
       name: 'Beyaz Peynir',
@@ -55,6 +60,7 @@ class MockData {
       servingLabel: '1 dilim (30 g)',
       meals: _breakfast,
       icon: Icons.brunch_dining_rounded,
+      category: FoodCategory.kahvaltilik,
     ),
     FoodItem(
       name: 'Kaşar Peyniri',
@@ -66,6 +72,7 @@ class MockData {
       servingLabel: '1 dilim (20 g)',
       meals: _breakfastSnack,
       icon: Icons.local_dining_rounded,
+      category: FoodCategory.kahvaltilik,
     ),
     FoodItem(
       name: 'Zeytin (Siyah)',
@@ -77,6 +84,7 @@ class MockData {
       servingLabel: '10 adet (30 g)',
       meals: _breakfast,
       icon: Icons.grain_rounded,
+      category: FoodCategory.kahvaltilik,
     ),
     FoodItem(
       name: 'Bal',
@@ -88,6 +96,7 @@ class MockData {
       servingLabel: '1 tatlı kaşığı (10 g)',
       meals: _breakfast,
       icon: Icons.emoji_food_beverage_rounded,
+      category: FoodCategory.kahvaltilik,
     ),
     FoodItem(
       name: 'Reçel (Kayısı)',
@@ -99,6 +108,7 @@ class MockData {
       servingLabel: '1 tatlı kaşığı (15 g)',
       meals: _breakfast,
       icon: Icons.emoji_food_beverage_rounded,
+      category: FoodCategory.kahvaltilik,
     ),
     FoodItem(
       name: 'Tereyağı',
@@ -110,6 +120,7 @@ class MockData {
       servingLabel: '1 tatlı kaşığı (10 g)',
       meals: _breakfast,
       icon: Icons.square_rounded,
+      category: FoodCategory.kahvaltilik,
     ),
     FoodItem(
       name: 'Domates',
@@ -121,6 +132,7 @@ class MockData {
       servingLabel: '2 dilim (60 g)',
       meals: _anyMeal,
       icon: Icons.eco_rounded,
+      category: FoodCategory.salata,
     ),
     FoodItem(
       name: 'Salatalık',
@@ -132,6 +144,7 @@ class MockData {
       servingLabel: '2 dilim (60 g)',
       meals: _anyMeal,
       icon: Icons.eco_rounded,
+      category: FoodCategory.salata,
     ),
     FoodItem(
       name: 'Sucuk (Izgara)',
@@ -143,6 +156,7 @@ class MockData {
       servingLabel: '3 dilim (50 g)',
       meals: _breakfast,
       icon: Icons.outdoor_grill_rounded,
+      category: FoodCategory.kahvaltilik,
     ),
     FoodItem(
       name: 'Simit',
@@ -154,6 +168,7 @@ class MockData {
       servingLabel: '1 adet (110 g)',
       meals: _breakfastSnack,
       icon: Icons.bakery_dining_rounded,
+      category: FoodCategory.hamurIsi,
     ),
     FoodItem(
       name: 'Yulaf Ezmesi',
@@ -165,6 +180,7 @@ class MockData {
       servingLabel: '1/2 su bardağı (40 g)',
       meals: _breakfast,
       icon: Icons.blender_rounded,
+      category: FoodCategory.kahvaltilik,
     ),
     FoodItem(
       name: 'Süt (Tam Yağlı)',
@@ -176,6 +192,7 @@ class MockData {
       servingLabel: '1 bardak (200 ml)',
       meals: _breakfastSnack,
       icon: Icons.local_cafe_rounded,
+      category: FoodCategory.icecek,
     ),
     FoodItem(
       name: 'Çay',
@@ -187,6 +204,7 @@ class MockData {
       servingLabel: '1 bardak (200 ml)',
       meals: _breakfastSnack,
       icon: Icons.emoji_food_beverage_rounded,
+      category: FoodCategory.icecek,
     ),
     FoodItem(
       name: 'Kahve (Sade)',
@@ -198,6 +216,7 @@ class MockData {
       servingLabel: '1 fincan (60 ml)',
       meals: _breakfastSnack,
       icon: Icons.local_cafe_rounded,
+      category: FoodCategory.icecek,
     ),
     FoodItem(
       name: 'Tam Buğday Ekmeği',
@@ -209,6 +228,7 @@ class MockData {
       servingLabel: '1 dilim (35 g)',
       meals: _anyMeal,
       icon: Icons.bakery_dining_rounded,
+      category: FoodCategory.hamurIsi,
     ),
     FoodItem(
       name: 'Yoğurt',
@@ -219,6 +239,7 @@ class MockData {
       fatG: 1.9,
       meals: _breakfastSnack,
       icon: Icons.icecream_rounded,
+      category: FoodCategory.kahvaltilik,
     ),
 
     // Öğle / akşam yemeği çeşitleri.
@@ -231,6 +252,7 @@ class MockData {
       fatG: 3.6,
       meals: _lunchDinner,
       icon: Icons.kebab_dining_rounded,
+      category: FoodCategory.et,
     ),
     FoodItem(
       name: 'Mercimek Çorbası',
@@ -242,6 +264,7 @@ class MockData {
       servingLabel: '1 kase (250 g)',
       meals: _lunchDinner,
       icon: Icons.soup_kitchen_rounded,
+      category: FoodCategory.corba,
     ),
     FoodItem(
       name: 'Fırında Somon',
@@ -253,6 +276,7 @@ class MockData {
       servingLabel: '1 fileto (150 g)',
       meals: _lunchDinner,
       icon: Icons.set_meal_rounded,
+      category: FoodCategory.balik,
     ),
     FoodItem(
       name: 'Izgara Köfte',
@@ -264,6 +288,7 @@ class MockData {
       servingLabel: '4 adet (120 g)',
       meals: _lunchDinner,
       icon: Icons.outdoor_grill_rounded,
+      category: FoodCategory.et,
     ),
     FoodItem(
       name: 'Kuru Fasulye',
@@ -275,6 +300,7 @@ class MockData {
       servingLabel: '1 kepçe (200 g)',
       meals: _lunchDinner,
       icon: Icons.local_dining_rounded,
+      category: FoodCategory.pilav,
     ),
     FoodItem(
       name: 'Pilav (Pirinç)',
@@ -286,6 +312,7 @@ class MockData {
       servingLabel: '1 kepçe (150 g)',
       meals: _lunchDinner,
       icon: Icons.rice_bowl_rounded,
+      category: FoodCategory.pilav,
     ),
     FoodItem(
       name: 'Karnıyarık',
@@ -297,6 +324,7 @@ class MockData {
       servingLabel: '1 porsiyon (250 g)',
       meals: _dinner,
       icon: Icons.dinner_dining_rounded,
+      category: FoodCategory.sebze,
     ),
     FoodItem(
       name: 'Tavuk Sote',
@@ -308,6 +336,7 @@ class MockData {
       servingLabel: '1 porsiyon (220 g)',
       meals: _lunchDinner,
       icon: Icons.kebab_dining_rounded,
+      category: FoodCategory.et,
     ),
     FoodItem(
       name: 'Çoban Salata',
@@ -319,6 +348,7 @@ class MockData {
       servingLabel: '1 porsiyon (150 g)',
       meals: _lunchDinnerSnack,
       icon: Icons.eco_rounded,
+      category: FoodCategory.salata,
     ),
     FoodItem(
       name: 'Mantı',
@@ -330,6 +360,7 @@ class MockData {
       servingLabel: '1 porsiyon (250 g)',
       meals: _lunchDinner,
       icon: Icons.ramen_dining_rounded,
+      category: FoodCategory.pilav,
     ),
     FoodItem(
       name: 'Lahmacun',
@@ -341,6 +372,7 @@ class MockData {
       servingLabel: '1 adet (150 g)',
       meals: _lunchDinnerSnack,
       icon: Icons.local_pizza_rounded,
+      category: FoodCategory.hamurIsi,
     ),
     FoodItem(
       name: 'Kuru Kayısı',
@@ -352,7 +384,10 @@ class MockData {
       servingLabel: '5 adet (40 g)',
       meals: _breakfastSnack,
       icon: Icons.cookie_rounded,
+      category: FoodCategory.atistirmalik,
     ),
+    ...extraFoods,
+    ...moreFoods,
   ];
 
   /// Small local product catalog keyed by (fake but EAN-13-shaped) barcode,
@@ -406,247 +441,7 @@ class MockData {
     ),
   };
 
-  static const recipes = <Recipe>[
-    Recipe(
-      title: 'Fırında Somon ve Kuşkonmaz',
-      description: 'Yüksek proteinli, düşük karbonhidratlı akşam yemeği',
-      minutes: 25,
-      calories: 410,
-      tag: 'Yüksek protein',
-      ingredients: [
-        '2 adet somon fileto',
-        '1 demet kuşkonmaz',
-        '2 yemek kaşığı zeytinyağı',
-        'Yarım limon',
-        'Tuz, karabiber',
-      ],
-      steps: [
-        'Fırını 200°C\'ye ısıtın.',
-        'Somonu ve kuşkonmazı fırın tepsisine dizin.',
-        'Zeytinyağı, tuz ve karabiber ile harmanlayın.',
-        '18-20 dakika pişirin, limonla servis edin.',
-      ],
-    ),
-    Recipe(
-      title: 'Mercimek Köftesi',
-      description: 'Doyurucu ve bitkisel bazlı ara öğün',
-      minutes: 35,
-      calories: 220,
-      tag: 'Vegan',
-      ingredients: [
-        '1 su bardağı kırmızı mercimek',
-        '1 su bardağı ince bulgur',
-        '1 soğan',
-        'Maydanoz, nane',
-        'Salça, baharatlar',
-      ],
-      steps: [
-        'Mercimeği haşlayın ve sıcakken bulgurla karıştırın.',
-        'Soğanı kavurup salça ile harmanlayın.',
-        'Tüm malzemeleri yoğurun, şekil verin.',
-        'Maydanoz ve nane ile servis edin.',
-      ],
-    ),
-    Recipe(
-      title: 'Yulaflı Meyveli Kase',
-      description: 'Hızlı ve lifli kahvaltı',
-      minutes: 10,
-      calories: 310,
-      tag: 'Kahvaltı',
-      ingredients: [
-        '1/2 su bardağı yulaf',
-        '1 su bardağı süt',
-        '1 muz',
-        'Bir avuç yaban mersini',
-        '1 tatlı kaşığı bal',
-      ],
-      steps: [
-        'Yulafı sütle karıştırıp bir gece buzdolabında bekletin.',
-        'Üzerine dilimlenmiş muz ve yaban mersini ekleyin.',
-        'Bal gezdirip servis edin.',
-      ],
-    ),
-    Recipe(
-      title: 'Menemen',
-      description: 'Klasik Türk kahvaltısının vazgeçilmezi',
-      minutes: 15,
-      calories: 280,
-      tag: 'Kahvaltı',
-      ingredients: [
-        '3 adet yumurta',
-        '2 adet domates',
-        '1 adet yeşil biber',
-        '1 yemek kaşığı tereyağı',
-        'Tuz, pul biber',
-      ],
-      steps: [
-        'Biberleri tereyağında kavurun.',
-        'Rendelenmiş domatesi ekleyip suyunu çekene kadar pişirin.',
-        'Yumurtaları kırıp karıştırarak pişirin, tuz ve pul biber ekleyin.',
-      ],
-    ),
-    Recipe(
-      title: 'Avokadolu Tam Buğday Tost',
-      description: 'Doyurucu ve lifli hızlı kahvaltı',
-      minutes: 8,
-      calories: 340,
-      tag: 'Kahvaltı',
-      ingredients: [
-        '2 dilim tam buğday ekmeği',
-        '1 adet avokado',
-        '1 adet haşlanmış yumurta',
-        'Limon suyu, tuz, karabiber',
-      ],
-      steps: [
-        'Ekmekleri kızartın.',
-        'Avokadoyu ezip limon suyu ve tuzla karıştırın.',
-        'Ekmeğe sürüp dilimlenmiş yumurtayla üzerini süsleyin.',
-      ],
-    ),
-    Recipe(
-      title: 'Fırında Tavuklu Sebze',
-      description: 'Dengeli ve doyurucu akşam yemeği',
-      minutes: 40,
-      calories: 390,
-      tag: 'Akşam yemeği',
-      ingredients: [
-        '2 adet tavuk göğsü',
-        '1 adet kabak',
-        '1 adet patates',
-        '1 adet havuç',
-        '2 yemek kaşığı zeytinyağı',
-        'Tuz, kekik',
-      ],
-      steps: [
-        'Sebzeleri ve tavuğu küp küp doğrayın.',
-        'Zeytinyağı, tuz ve kekikle harmanlayıp fırın tepsisine yayın.',
-        '200°C fırında 30-35 dakika pişirin.',
-      ],
-    ),
-    Recipe(
-      title: 'Karnıyarık',
-      description: 'Geleneksel, doyurucu akşam yemeği',
-      minutes: 55,
-      calories: 360,
-      tag: 'Akşam yemeği',
-      ingredients: [
-        '4 adet patlıcan',
-        '250 g kıyma',
-        '1 soğan, 2 domates',
-        '1 yeşil biber',
-        'Tuz, karabiber',
-      ],
-      steps: [
-        'Patlıcanları ortadan yararak kızartın.',
-        'Kıymayı soğan ve biberle kavurup domatesle harmanlayın.',
-        'Patlıcanların içine doldurup fırında 20 dakika pişirin.',
-      ],
-    ),
-    Recipe(
-      title: 'Fırın Tavuk But',
-      description: 'Az malzemeli, protein ağırlıklı akşam yemeği',
-      minutes: 45,
-      calories: 420,
-      tag: 'Yüksek protein',
-      ingredients: [
-        '4 adet tavuk but',
-        '2 yemek kaşığı zeytinyağı',
-        '1 diş sarımsak',
-        'Tuz, kırmızı toz biber',
-      ],
-      steps: [
-        'Tavuk butları baharatlarla marine edin.',
-        '200°C fırında 35-40 dakika, ara sıra çevirerek pişirin.',
-      ],
-    ),
-    Recipe(
-      title: 'Mercimek Çorbası',
-      description: 'Hafif ve doyurucu öğle yemeği',
-      minutes: 30,
-      calories: 210,
-      tag: 'Öğle yemeği',
-      ingredients: [
-        '1 su bardağı kırmızı mercimek',
-        '1 soğan, 1 havuç',
-        '1 yemek kaşığı un',
-        '1 yemek kaşığı tereyağı',
-        'Tuz, kimyon',
-      ],
-      steps: [
-        'Soğan ve havucu tereyağında kavurun.',
-        'Mercimeği ve suyu ekleyip yumuşayana kadar pişirin.',
-        'Blenderdan geçirip kimyon ve tuzla tatlandırın.',
-      ],
-    ),
-    Recipe(
-      title: 'Tavuklu Sezar Salata',
-      description: 'Hafif ve protein ağırlıklı öğle yemeği',
-      minutes: 20,
-      calories: 320,
-      tag: 'Öğle yemeği',
-      ingredients: [
-        '150 g ızgara tavuk göğsü',
-        '1 kase marul',
-        '2 yemek kaşığı rendelenmiş parmesan',
-        'Az yağlı sezar sos',
-        'Kruton',
-      ],
-      steps: [
-        'Marulu doğrayıp kaseye alın.',
-        'Dilimlenmiş ızgara tavuğu ekleyin.',
-        'Sos, peynir ve krutonla karıştırıp servis edin.',
-      ],
-    ),
-    Recipe(
-      title: 'Nohut Salatası',
-      description: 'Bitkisel bazlı, lifli ara öğün',
-      minutes: 15,
-      calories: 240,
-      tag: 'Vegan',
-      ingredients: [
-        '1 kutu haşlanmış nohut',
-        '1 domates, 1 salatalık',
-        'Maydanoz',
-        'Zeytinyağı, limon suyu',
-      ],
-      steps: [
-        'Sebzeleri küçük küpler halinde doğrayın.',
-        'Nohutla karıştırın.',
-        'Zeytinyağı ve limon suyuyla tatlandırın.',
-      ],
-    ),
-    Recipe(
-      title: 'Badem ve Kuru Kayısı Karışımı',
-      description: 'Pratik, enerji verici ara öğün',
-      minutes: 2,
-      calories: 190,
-      tag: 'Ara öğün',
-      ingredients: [
-        '10 adet çiğ badem',
-        '4 adet kuru kayısı',
-      ],
-      steps: [
-        'Malzemeleri küçük bir kaseye koyup karıştırın.',
-      ],
-    ),
-    Recipe(
-      title: 'Yoğurtlu Salatalık (Cacık)',
-      description: 'Serinletici, düşük kalorili ara öğün',
-      minutes: 5,
-      calories: 90,
-      tag: 'Ara öğün',
-      ingredients: [
-        '1 su bardağı yoğurt',
-        '1 adet salatalık',
-        '1 diş sarımsak',
-        'Nane, tuz',
-      ],
-      steps: [
-        'Salatalığı rendeleyin, sarımsağı ezin.',
-        'Yoğurtla karıştırıp nane ve tuz ekleyin.',
-      ],
-    ),
-  ];
+  static const recipes = allRecipes;
 
   static List<WeightEntry> weightHistory(DateTime now) => List.generate(8, (i) {
         final date = now.subtract(Duration(days: (7 - i) * 7));

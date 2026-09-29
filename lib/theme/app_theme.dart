@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 import 'app_colors.dart';
 
@@ -50,8 +49,10 @@ class AppTheme {
   static Color primaryText(Brightness b) =>
       b == Brightness.dark ? _darkPrimaryText : _lightPrimaryText;
 
+  static const _fontFamily = 'Nunito';
+
   static TextTheme _textTheme(Color primary, Color secondary) {
-    final base = GoogleFonts.nunitoTextTheme();
+    final base = Typography.material2021().black;
     return base
         .copyWith(
           displayLarge: base.displayLarge?.copyWith(
@@ -75,10 +76,22 @@ class AppTheme {
           labelLarge: base.labelLarge
               ?.copyWith(fontWeight: FontWeight.w800, color: primary),
         )
-        .apply(fontFamily: GoogleFonts.nunito().fontFamily);
+        .apply(fontFamily: _fontFamily);
   }
 
-  static ThemeData light({bool reduceMotion = false}) {
+  // Built themes are cached: constructing a ThemeData is costly, and a fresh
+  // (non-identical) instance would force every Theme.of() dependent in the
+  // app to rebuild.
+  static final _lightCache = <bool, ThemeData>{};
+  static final _darkCache = <bool, ThemeData>{};
+
+  static ThemeData light({bool reduceMotion = false}) =>
+      _lightCache.putIfAbsent(reduceMotion, () => _buildLight(reduceMotion));
+
+  static ThemeData dark({bool reduceMotion = false}) =>
+      _darkCache.putIfAbsent(reduceMotion, () => _buildDark(reduceMotion));
+
+  static ThemeData _buildLight(bool reduceMotion) {
     const scheme = ColorScheme.light(
       brightness: Brightness.light,
       primary: _lightPrimary,
@@ -96,7 +109,7 @@ class AppTheme {
         _lightTextSecondary, DengeColors.light, reduceMotion);
   }
 
-  static ThemeData dark({bool reduceMotion = false}) {
+  static ThemeData _buildDark(bool reduceMotion) {
     const scheme = ColorScheme.dark(
       brightness: Brightness.dark,
       primary: _darkPrimary,
@@ -122,7 +135,7 @@ class AppTheme {
       useMaterial3: true,
       colorScheme: scheme,
       scaffoldBackgroundColor: background,
-      fontFamily: GoogleFonts.nunito().fontFamily,
+      fontFamily: _fontFamily,
       textTheme: textTheme,
       extensions: [dengeColors],
       pageTransitionsTheme: reduceMotion

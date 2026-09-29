@@ -93,10 +93,10 @@ class AppRoutes {
     );
   }
 
-  static Route<void> pushRecipeDetail(Recipe recipe) {
+  static Route<void> pushRecipeDetail(Recipe recipe, {String? heroTag}) {
     return MaterialPageRoute(
       settings: const RouteSettings(name: recipeDetail),
-      builder: (_) => RecipeDetailScreen(recipe: recipe),
+      builder: (_) => RecipeDetailScreen(recipe: recipe, heroTag: heroTag),
     );
   }
 

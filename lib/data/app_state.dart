@@ -103,6 +103,7 @@ class AppState extends ChangeNotifier {
   static const _kGoalWeight = 'user_goal_weight';
   static const _kWeeklyPace = 'user_weekly_pace';
   static const _kMemberSince = 'user_member_since';
+  static const _kFavoriteRecipes = 'favorite_recipes';
 
   ThemeMode themeMode = ThemeMode.light;
   TextScaleOption textScale = TextScaleOption.normal;
@@ -158,6 +159,17 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Titles of recipes the user has hearted, persisted across restarts.
+  final Set<String> favoriteRecipes = {};
+
+  bool isFavoriteRecipe(Recipe recipe) => favoriteRecipes.contains(recipe.title);
+
+  void toggleFavoriteRecipe(Recipe recipe) {
+    if (!favoriteRecipes.remove(recipe.title)) favoriteRecipes.add(recipe.title);
+    notifyListeners();
+    _prefs?.setStringList(_kFavoriteRecipes, favoriteRecipes.toList());
+  }
+
   void logWeight(double kg) {
     weightHistory.add(WeightEntry(DateTime.now(), kg));
     user = user.copyWith(weightKg: kg);
@@ -185,6 +197,9 @@ class AppState extends ChangeNotifier {
     );
     reduceMotion = prefs.getBool(_kReduceMotion) ?? false;
     locale = Locale(prefs.getString(_kLocale) ?? 'tr');
+    favoriteRecipes
+      ..clear()
+      ..addAll(prefs.getStringList(_kFavoriteRecipes) ?? const []);
 
     setupComplete = prefs.getBool(_kSetupComplete) ?? false;
     weeklyPaceKg = prefs.getDouble(_kWeeklyPace) ?? 0.5;

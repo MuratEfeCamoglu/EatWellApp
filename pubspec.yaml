@@ -34,13 +34,13 @@ dependencies:
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
-  google_fonts: ^6.2.1
   fl_chart: ^0.69.0
   provider: ^6.1.5+1
   shared_preferences: ^2.5.5
   mobile_scanner: ^7.4.2
   image_picker: ^1.2.2
   google_mlkit_image_labeling: ^0.15.0
+  http: ^1.6.0
 
 dev_dependencies:
   flutter_test:
@@ -63,6 +63,28 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+
+  assets:
+    - assets/foods/
+    - assets/recipes/
+
+  # Nunito is bundled (not fetched at runtime) so text never re-lays out
+  # when a font download finishes. SIL Open Font License.
+  fonts:
+    - family: Nunito
+      fonts:
+        - asset: assets/fonts/Nunito-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/Nunito-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Nunito-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/Nunito-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/Nunito-ExtraBold.ttf
+          weight: 800
+        - asset: assets/fonts/Nunito-Black.ttf
+          weight: 900
 
   # To add assets to your application, add an assets section, like this:
   # assets:

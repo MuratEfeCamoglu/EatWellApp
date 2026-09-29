@@ -2,19 +2,16 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
-import 'package:provider/provider.dart';
 
-import '../../data/app_state.dart';
-import '../../data/mock_data.dart';
 import '../../data/models.dart';
+import '../../data/product_lookup.dart';
 import '../../router.dart';
 import '../../widgets/app_back_button.dart';
 import '../search/search_screen.dart' show defaultMealForNow;
 
-/// Real camera + barcode scanning (via `mobile_scanner`), replacing the old
-/// static viewfinder mock. Detected codes are resolved against
-/// [MockData.barcodeCatalog] — there's no real product database backend, so
-/// only a handful of sample barcodes are recognized.
+/// Real camera + barcode scanning (via `mobile_scanner`). Detected codes are
+/// resolved by [lookupBarcode]: the bundled sample catalog first, then the
+/// Open Food Facts product database over the network.
 class BarcodeScreen extends StatefulWidget {
   const BarcodeScreen({super.key, this.initialMeal});
 
@@ -33,7 +30,9 @@ class _BarcodeScreenState extends State<BarcodeScreen> {
   StreamSubscription<BarcodeCapture>? _subscription;
 
   String? _scannedCode;
-  FoodItem? _foundProduct;
+
+  /// Null while the lookup for [_scannedCode] is still in flight.
+  ProductLookupResult? _result;
   bool _locked = false;
 
   @override
@@ -58,31 +57,36 @@ class _BarcodeScreenState extends State<BarcodeScreen> {
       if (code == null || code.isEmpty) continue;
       setState(() {
         _scannedCode = code;
-        _foundProduct = MockData.barcodeCatalog[code];
         _locked = true;
       });
       unawaited(_controller.stop());
+      unawaited(_lookup(code));
       return;
     }
+  }
+
+  Future<void> _lookup(String code) async {
+    setState(() => _result = null);
+    final result = await lookupBarcode(code);
+    // Ignore a stale answer if the user already rescanned or left.
+    if (!mounted || _scannedCode != code) return;
+    setState(() => _result = result);
   }
 
   void _rescan() {
     setState(() {
       _scannedCode = null;
-      _foundProduct = null;
+      _result = null;
       _locked = false;
     });
     unawaited(_controller.start());
   }
 
-  void _addFoundProduct() {
-    final product = _foundProduct;
-    if (product == null) return;
-    context.read<AppState>().addFoodToMeal(_meal, product, 1);
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text('${product.name} eklendi')));
-    Navigator.of(context).pop();
+  /// Opens the regular food detail so the user picks how many grams they
+  /// had (the product's values are per 100 g) and the meal to add it to.
+  void _chooseAmount(FoodItem product) {
+    Navigator.of(context)
+        .pushReplacement(AppRoutes.pushFoodDetail(product, initialMeal: _meal));
   }
 
   @override
@@ -182,14 +186,25 @@ class _BarcodeScreenState extends State<BarcodeScreen> {
                 left: 16,
                 right: 16,
                 bottom: 16,
-                child: _foundProduct != null
-                    ? _ProductFoundSheet(
-                        product: _foundProduct!,
-                        meal: _meal,
-                        onAdd: _addFoundProduct,
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 220),
+                  child: switch (_result) {
+                    null => _LookingUpSheet(code: _scannedCode!),
+                    ProductFound(:final food, :final imageUrl) => _ProductFoundSheet(
+                        product: food,
+                        imageUrl: imageUrl,
+                        onChooseAmount: () => _chooseAmount(food),
                         onRescan: _rescan,
-                      )
-                    : _ProductNotFoundSheet(code: _scannedCode!, onRescan: _rescan),
+                      ),
+                    ProductNotFound() =>
+                      _ProductNotFoundSheet(code: _scannedCode!, onRescan: _rescan),
+                    ProductLookupFailed(:final message) => _LookupFailedSheet(
+                        message: message,
+                        onRetry: () => _lookup(_scannedCode!),
+                        onRescan: _rescan,
+                      ),
+                  },
+                ),
               ),
           ],
         ),
@@ -326,25 +341,11 @@ class _ScanFramePainter extends CustomPainter {
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
-const _mealAddLabels = {
-  MealType.breakfast: 'Kahvaltıya ekle',
-  MealType.lunch: 'Öğle yemeğine ekle',
-  MealType.dinner: 'Akşam yemeğine ekle',
-  MealType.snack: 'Ara öğüne ekle',
-};
+/// White rounded card that all bottom result sheets share.
+class _SheetCard extends StatelessWidget {
+  const _SheetCard({required this.child});
 
-class _ProductFoundSheet extends StatelessWidget {
-  const _ProductFoundSheet({
-    required this.product,
-    required this.meal,
-    required this.onAdd,
-    required this.onRescan,
-  });
-
-  final FoodItem product;
-  final MealType meal;
-  final VoidCallback onAdd;
-  final VoidCallback onRescan;
+  final Widget child;
 
   @override
   Widget build(BuildContext context) {
@@ -357,19 +358,122 @@ class _ProductFoundSheet extends StatelessWidget {
           BoxShadow(color: Color(0x4D000000), blurRadius: 40, offset: Offset(0, 16)),
         ],
       ),
+      child: child,
+    );
+  }
+}
+
+/// Icon tile + title/subtitle header used by the non-product sheets.
+class _SheetHeader extends StatelessWidget {
+  const _SheetHeader({
+    required this.leading,
+    required this.leadingBg,
+    required this.title,
+    required this.subtitle,
+  });
+
+  final Widget leading;
+  final Color leadingBg;
+  final String title;
+  final String subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          width: 56,
+          height: 56,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: leadingBg,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: leading,
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(title,
+                  style: const TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF14201A))),
+              const SizedBox(height: 2),
+              Text(subtitle, style: const TextStyle(fontSize: 13, color: Color(0xFF55655B))),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _LookingUpSheet extends StatelessWidget {
+  const _LookingUpSheet({required this.code});
+
+  final String code;
+
+  @override
+  Widget build(BuildContext context) {
+    return _SheetCard(
+      child: _SheetHeader(
+        leading: const SizedBox(
+          width: 24,
+          height: 24,
+          child: CircularProgressIndicator(strokeWidth: 3, color: Color(0xFF1D7445)),
+        ),
+        leadingBg: const Color(0xFFE4F3EA),
+        title: 'Ürün aranıyor…',
+        subtitle: 'Barkod: $code',
+      ),
+    );
+  }
+}
+
+class _ProductFoundSheet extends StatelessWidget {
+  const _ProductFoundSheet({
+    required this.product,
+    required this.imageUrl,
+    required this.onChooseAmount,
+    required this.onRescan,
+  });
+
+  final FoodItem product;
+  final String? imageUrl;
+  final VoidCallback onChooseAmount;
+  final VoidCallback onRescan;
+
+  @override
+  Widget build(BuildContext context) {
+    const placeholder = ColoredBox(
+      color: Color(0xFFE2F1FA),
+      child: Center(child: Icon(Icons.inventory_2_rounded, color: Color(0xFF2B97D6))),
+    );
+    const muted = TextStyle(fontSize: 13, color: Color(0xFF55655B));
+    return _SheetCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
         children: [
           Row(
             children: [
-              Container(
-                width: 56,
-                height: 56,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFE2F1FA),
-                  borderRadius: BorderRadius.circular(16),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(16),
+                child: SizedBox(
+                  width: 64,
+                  height: 64,
+                  child: imageUrl == null
+                      ? placeholder
+                      : Image.network(
+                          imageUrl!,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => placeholder,
+                          loadingBuilder: (context, child, progress) =>
+                              progress == null ? child : placeholder,
+                        ),
                 ),
-                child: const Icon(Icons.local_drink_rounded, color: Color(0xFF2B97D6)),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -390,28 +494,38 @@ class _ProductFoundSheet extends StatelessWidget {
                       ],
                     ),
                     const SizedBox(height: 2),
-                    Text(product.name,
-                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
-                    const SizedBox(height: 2),
-                    Text.rich(
-                      TextSpan(
-                        text: '${product.servingLabel} · ',
-                        style: const TextStyle(fontSize: 14, color: Color(0xFF55655B)),
-                        children: [
-                          TextSpan(
-                            text: '${product.caloriesPer100g} kcal',
-                            style: const TextStyle(
-                                color: Color(0xFF14201A), fontWeight: FontWeight.w800),
-                          ),
-                        ],
-                      ),
+                    Text(
+                      product.name,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF14201A)),
                     ),
+                    Text(product.brand, style: muted),
                   ],
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF3F6F4),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Row(
+              children: [
+                _Nutrient(value: '${product.caloriesPer100g}', label: 'kcal'),
+                _Nutrient(value: _g(product.proteinG), label: 'protein'),
+                _Nutrient(value: _g(product.carbsG), label: 'karb.'),
+                _Nutrient(value: _g(product.fatG), label: 'yağ'),
+              ],
+            ),
+          ),
+          const SizedBox(height: 4),
+          const Text('Değerler 100 g içindir', style: muted, textAlign: TextAlign.center),
+          const SizedBox(height: 12),
           Row(
             children: [
               Expanded(
@@ -430,13 +544,37 @@ class _ProductFoundSheet extends StatelessWidget {
               Expanded(
                 flex: 2,
                 child: ElevatedButton.icon(
-                  onPressed: onAdd,
-                  icon: const Icon(Icons.add_rounded),
-                  label: Text(_mealAddLabels[meal]!),
+                  onPressed: onChooseAmount,
+                  icon: const Icon(Icons.scale_rounded),
+                  label: const Text('Miktar seç'),
                 ),
               ),
             ],
           ),
+        ],
+      ),
+    );
+  }
+
+  static String _g(double v) =>
+      '${v == v.roundToDouble() ? v.round() : v.toStringAsFixed(1).replaceAll('.', ',')} g';
+}
+
+class _Nutrient extends StatelessWidget {
+  const _Nutrient({required this.value, required this.label});
+
+  final String value;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Column(
+        children: [
+          Text(value,
+              style: const TextStyle(
+                  fontSize: 15, fontWeight: FontWeight.w900, color: Color(0xFF14201A))),
+          Text(label, style: const TextStyle(fontSize: 12, color: Color(0xFF55655B))),
         ],
       ),
     );
@@ -451,45 +589,16 @@ class _ProductNotFoundSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: const [
-          BoxShadow(color: Color(0x4D000000), blurRadius: 40, offset: Offset(0, 16)),
-        ],
-      ),
+    return _SheetCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
         children: [
-          Row(
-            children: [
-              Container(
-                width: 56,
-                height: 56,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFDEBE3),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: const Icon(Icons.search_off_rounded, color: Color(0xFFB5651D)),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Text('Ürün bulunamadı',
-                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
-                    const SizedBox(height: 2),
-                    Text('Barkod: $code',
-                        style: const TextStyle(fontSize: 13, color: Color(0xFF55655B))),
-                  ],
-                ),
-              ),
-            ],
+          _SheetHeader(
+            leading: const Icon(Icons.search_off_rounded, color: Color(0xFFB5651D)),
+            leadingBg: const Color(0xFFFDEBE3),
+            title: 'Ürün bulunamadı',
+            subtitle: 'Barkod: $code\nBu ürün veritabanında kayıtlı değil.',
           ),
           const SizedBox(height: 16),
           Row(
@@ -507,6 +616,57 @@ class _ProductNotFoundSheet extends StatelessWidget {
                   onPressed: () => Navigator.of(context).pop(),
                   style: ElevatedButton.styleFrom(minimumSize: const Size.fromHeight(56)),
                   child: const Text('Elle ara'),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LookupFailedSheet extends StatelessWidget {
+  const _LookupFailedSheet({
+    required this.message,
+    required this.onRetry,
+    required this.onRescan,
+  });
+
+  final String message;
+  final VoidCallback onRetry;
+  final VoidCallback onRescan;
+
+  @override
+  Widget build(BuildContext context) {
+    return _SheetCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _SheetHeader(
+            leading: const Icon(Icons.wifi_off_rounded, color: Color(0xFFB5651D)),
+            leadingBg: const Color(0xFFFDEBE3),
+            title: 'Ürün bilgisi alınamadı',
+            subtitle: message,
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: onRescan,
+                  style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(56)),
+                  child: const Text('Tekrar tara'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: onRetry,
+                  icon: const Icon(Icons.refresh_rounded),
+                  style: ElevatedButton.styleFrom(minimumSize: const Size.fromHeight(56)),
+                  label: const Text('Tekrar dene'),
                 ),
               ),
             ],

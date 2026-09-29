@@ -4,6 +4,7 @@ import '../../data/app_state.dart';
 import '../../router.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/app_back_button.dart';
+import '../../widgets/weight_input_dialog.dart';
 
 class _GoalOption {
   const _GoalOption(this.goal, this.title, this.subtitle, this.icon);
@@ -62,60 +63,21 @@ class _SetupGoalScreenState extends State<SetupGoalScreen> {
   }
 
   Future<void> _editGoalWeight() async {
-    final controller = TextEditingController(text: _goalWeightKg.round().toString());
-    final result = await showDialog<double>(
-      context: context,
-      builder: (context) {
-        String? error;
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            void submit() {
-              final value = double.tryParse(controller.text.replaceAll(',', '.'));
-              if (value == null || value < 30 || value > 300) {
-                setDialogState(() => error = 'Geçerli bir kilo girin');
-                return;
-              }
-              if (_goal == WeightGoal.lose && value >= _currentWeightKg) {
-                setDialogState(
-                    () => error = 'Hedef, şu anki kilondan (${_currentWeightKg.round()} kg) düşük olmalı');
-                return;
-              }
-              if (_goal == WeightGoal.gain && value <= _currentWeightKg) {
-                setDialogState(
-                    () => error = 'Hedef, şu anki kilondan (${_currentWeightKg.round()} kg) yüksek olmalı');
-                return;
-              }
-              Navigator.of(context).pop(value);
-            }
-
-            return AlertDialog(
-              title: const Text('Hedef kilon'),
-              content: TextField(
-                controller: controller,
-                autofocus: true,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                decoration: InputDecoration(
-                  suffixText: 'kg',
-                  errorText: error,
-                ),
-                onSubmitted: (_) => submit(),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('Vazgeç'),
-                ),
-                ElevatedButton(
-                  onPressed: submit,
-                  child: const Text('Kaydet'),
-                ),
-              ],
-            );
-          },
-        );
+    final result = await showWeightInputDialog(
+      context,
+      title: 'Hedef kilon',
+      initialKg: _goalWeightKg,
+      validate: (value) {
+        if (_goal == WeightGoal.lose && value >= _currentWeightKg) {
+          return 'Hedef, şu anki kilondan (${_currentWeightKg.round()} kg) düşük olmalı';
+        }
+        if (_goal == WeightGoal.gain && value <= _currentWeightKg) {
+          return 'Hedef, şu anki kilondan (${_currentWeightKg.round()} kg) yüksek olmalı';
+        }
+        return null;
       },
     );
-    controller.dispose();
+    if (!mounted) return;
     if (result != null) {
       setState(() {
         _goalWeightKg = result;
