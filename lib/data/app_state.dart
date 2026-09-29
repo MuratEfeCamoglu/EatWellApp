@@ -1,0 +1,376 @@
+import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import 'mock_data.dart';
+import 'models.dart';
+
+enum Gender { female, male }
+
+enum ActivityLevel { sedentary, light, moderate, active }
+
+extension ActivityLevelMultiplier on ActivityLevel {
+  /// Standard Harris/Mifflin activity multipliers used to turn BMR into TDEE.
+  double get multiplier {
+    switch (this) {
+      case ActivityLevel.sedentary:
+        return 1.2;
+      case ActivityLevel.light:
+        return 1.375;
+      case ActivityLevel.moderate:
+        return 1.55;
+      case ActivityLevel.active:
+        return 1.725;
+    }
+  }
+}
+
+enum WeightGoal { lose, maintain, gain }
+
+enum TextScaleOption { small, normal, large, extraLarge }
+
+extension TextScaleOptionValue on TextScaleOption {
+  double get scale {
+    switch (this) {
+      case TextScaleOption.small:
+        return 0.9;
+      case TextScaleOption.normal:
+        return 1.0;
+      case TextScaleOption.large:
+        return 1.15;
+      case TextScaleOption.extraLarge:
+        return 1.3;
+    }
+  }
+
+  String get label {
+    switch (this) {
+      case TextScaleOption.small:
+        return 'Küçük';
+      case TextScaleOption.normal:
+        return 'Normal';
+      case TextScaleOption.large:
+        return 'Büyük';
+      case TextScaleOption.extraLarge:
+        return 'Çok büyük';
+    }
+  }
+}
+
+/// Answers collected across the 6-step setup wizard. Kept separate from
+/// [UserProfile] because it's incomplete until the final step turns it into
+/// one; screens write into this as the user moves forward instead of each
+/// screen re-reading the shared mock profile.
+class SetupDraft {
+  String name = '';
+  String email = '';
+  Gender gender = Gender.female;
+  int age = 27;
+  double heightCm = 168;
+  double weightKg = 70;
+  ActivityLevel activityLevel = ActivityLevel.moderate;
+  WeightGoal goal = WeightGoal.lose;
+  double weeklyPaceKg = 0.5;
+
+  /// Null until the goal screen either defaults it (lose/gain) or the user
+  /// edits it directly; [AppState.suggestedGoalWeightKg] supplies the
+  /// starting suggestion.
+  double? goalWeightKg;
+}
+
+/// Shared, persisted app state. Replaces scattered references to the
+/// static [MockData.user] with a real (initially empty) profile that only
+/// gets filled in once the user actually completes setup, plus a mutable
+/// diary so adding a food item is reflected across Home/Diary.
+class AppState extends ChangeNotifier {
+  AppState._();
+  static final AppState instance = AppState._();
+
+  static const _kThemeMode = 'theme_mode';
+  static const _kTextScale = 'text_scale';
+  static const _kReduceMotion = 'reduce_motion';
+  static const _kLocale = 'locale';
+  static const _kSetupComplete = 'setup_complete';
+  static const _kName = 'user_name';
+  static const _kEmail = 'user_email';
+  static const _kInitials = 'user_initials';
+  static const _kStreak = 'user_streak';
+  static const _kCalorieGoal = 'user_calorie_goal';
+  static const _kProteinGoal = 'user_protein_goal';
+  static const _kCarbsGoal = 'user_carbs_goal';
+  static const _kFatGoal = 'user_fat_goal';
+  static const _kHeight = 'user_height';
+  static const _kWeight = 'user_weight';
+  static const _kGoalWeight = 'user_goal_weight';
+  static const _kWeeklyPace = 'user_weekly_pace';
+  static const _kMemberSince = 'user_member_since';
+
+  ThemeMode themeMode = ThemeMode.light;
+  TextScaleOption textScale = TextScaleOption.normal;
+  bool reduceMotion = false;
+  Locale locale = const Locale('tr');
+
+  bool setupComplete = false;
+  UserProfile user = UserProfile.empty;
+  final SetupDraft draft = SetupDraft();
+
+  /// The pace chosen during setup, persisted separately from [draft] (which
+  /// resets each session) so screens like Profile can still show an
+  /// accurate ETA after an app restart.
+  double weeklyPaceKg = 0.5;
+
+  /// When setup actually completed — used for Profile's "üye" (member
+  /// since) label instead of a fixed placeholder date.
+  DateTime? memberSince;
+
+  /// Nothing logged yet — a fresh profile starts with an empty diary, not
+  /// someone else's sample breakfast/lunch.
+  final List<MealEntry> todaysMeals = [
+    for (final type in MealType.values)
+      MealEntry(
+        type: type,
+        title: switch (type) {
+          MealType.breakfast => 'Kahvaltı',
+          MealType.lunch => 'Öğle yemeği',
+          MealType.dinner => 'Akşam yemeği',
+          MealType.snack => 'Ara öğün',
+        },
+        description: 'Henüz eklenmedi',
+        calories: 0,
+        logged: false,
+      ),
+  ];
+  double proteinConsumedG = 0;
+  double carbsConsumedG = 0;
+  double fatConsumedG = 0;
+  int waterGlasses = 0;
+
+  /// Real weight log, seeded with a single entry (today, at setup weight)
+  /// once setup completes — not a fake multi-week downward trend.
+  final List<WeightEntry> weightHistory = [];
+
+  int get caloriesConsumedToday =>
+      todaysMeals.fold(0, (sum, m) => sum + m.calories);
+
+  bool get hasLoggedFoodToday => todaysMeals.any((m) => m.logged);
+
+  void setWaterGlasses(int value) {
+    waterGlasses = value.clamp(0, MockData.waterGlassesGoal);
+    notifyListeners();
+  }
+
+  void logWeight(double kg) {
+    weightHistory.add(WeightEntry(DateTime.now(), kg));
+    user = user.copyWith(weightKg: kg);
+    notifyListeners();
+    _prefs?.setDouble(_kWeight, kg);
+  }
+
+  SharedPreferences? _prefs;
+
+  Future<void> load() async {
+    final prefs = await SharedPreferences.getInstance();
+    _prefs = prefs;
+
+    final themeName = prefs.getString(_kThemeMode);
+    themeMode = switch (themeName) {
+      'dark' => ThemeMode.dark,
+      'light' => ThemeMode.light,
+      _ => ThemeMode.light,
+    };
+
+    final scaleName = prefs.getString(_kTextScale);
+    textScale = TextScaleOption.values.firstWhere(
+      (o) => o.name == scaleName,
+      orElse: () => TextScaleOption.normal,
+    );
+    reduceMotion = prefs.getBool(_kReduceMotion) ?? false;
+    locale = Locale(prefs.getString(_kLocale) ?? 'tr');
+
+    setupComplete = prefs.getBool(_kSetupComplete) ?? false;
+    weeklyPaceKg = prefs.getDouble(_kWeeklyPace) ?? 0.5;
+    final memberSinceStr = prefs.getString(_kMemberSince);
+    memberSince = memberSinceStr == null ? null : DateTime.tryParse(memberSinceStr);
+    if (setupComplete) {
+      user = UserProfile(
+        name: prefs.getString(_kName) ?? '',
+        initials: prefs.getString(_kInitials) ?? '',
+        email: prefs.getString(_kEmail) ?? '',
+        streakDays: prefs.getInt(_kStreak) ?? 0,
+        calorieGoal: prefs.getInt(_kCalorieGoal) ?? 0,
+        proteinGoalG: prefs.getInt(_kProteinGoal) ?? 0,
+        carbsGoalG: prefs.getInt(_kCarbsGoal) ?? 0,
+        fatGoalG: prefs.getInt(_kFatGoal) ?? 0,
+        heightCm: prefs.getDouble(_kHeight) ?? 0,
+        weightKg: prefs.getDouble(_kWeight) ?? 0,
+        goalWeightKg: prefs.getDouble(_kGoalWeight) ?? 0,
+      );
+      // Weight history itself isn't persisted (no history storage yet), so
+      // reseed a single point from the last known weight rather than
+      // showing an empty chart after every restart.
+      weightHistory.add(WeightEntry(DateTime.now(), user.weightKg));
+    }
+    notifyListeners();
+  }
+
+  void setThemeMode(ThemeMode mode) {
+    themeMode = mode;
+    notifyListeners();
+    _prefs?.setString(_kThemeMode, mode == ThemeMode.dark ? 'dark' : 'light');
+  }
+
+  void setTextScale(TextScaleOption option) {
+    textScale = option;
+    notifyListeners();
+    _prefs?.setString(_kTextScale, option.name);
+  }
+
+  void setReduceMotion(bool value) {
+    reduceMotion = value;
+    notifyListeners();
+    _prefs?.setBool(_kReduceMotion, value);
+  }
+
+  void setLocale(Locale value) {
+    locale = value;
+    notifyListeners();
+    _prefs?.setString(_kLocale, value.languageCode);
+  }
+
+  /// Basal metabolic rate via the Mifflin-St Jeor equation.
+  double _bmr({
+    required Gender gender,
+    required double weightKg,
+    required double heightCm,
+    required int age,
+  }) {
+    final base = 10 * weightKg + 6.25 * heightCm - 5 * age;
+    return gender == Gender.male ? base + 5 : base - 161;
+  }
+
+  /// A sensible default target weight for the current draft's goal, used to
+  /// pre-fill the (still user-editable) "Hedef kilo" field. Maintaining
+  /// weight always suggests the current weight itself, never a fixed mock
+  /// number, so it stops contradicting a goal the user didn't ask for.
+  double suggestedGoalWeightKg(WeightGoal goal, double currentWeightKg) {
+    switch (goal) {
+      case WeightGoal.maintain:
+        return currentWeightKg;
+      case WeightGoal.lose:
+        return (currentWeightKg - 5).clamp(35, currentWeightKg);
+      case WeightGoal.gain:
+        return currentWeightKg + 5;
+    }
+  }
+
+  /// Builds the final profile from [draft] using real BMR/TDEE math, stores
+  /// it as the active user, and persists it so it survives app restarts.
+  Future<void> completeSetup() async {
+    final weightKg = draft.weightKg;
+    final heightCm = draft.heightCm;
+    final goalWeightKg =
+        draft.goalWeightKg ?? suggestedGoalWeightKg(draft.goal, weightKg);
+
+    final bmr = _bmr(
+      gender: draft.gender,
+      weightKg: weightKg,
+      heightCm: heightCm,
+      age: draft.age,
+    );
+    final tdee = bmr * draft.activityLevel.multiplier;
+
+    // 1 kg of body fat ~= 7700 kcal.
+    final dailyDeltaKcal = draft.weeklyPaceKg * 7700 / 7;
+    double calorieGoal;
+    switch (draft.goal) {
+      case WeightGoal.lose:
+        calorieGoal = tdee - dailyDeltaKcal;
+        break;
+      case WeightGoal.gain:
+        calorieGoal = tdee + dailyDeltaKcal;
+        break;
+      case WeightGoal.maintain:
+        calorieGoal = tdee;
+        break;
+    }
+    final floor = draft.gender == Gender.male ? 1500.0 : 1200.0;
+    calorieGoal = calorieGoal.clamp(floor, 4000.0);
+
+    final proteinGoalG = (weightKg * 1.8).round();
+    final fatGoalG = (calorieGoal * 0.27 / 9).round();
+    final proteinKcal = proteinGoalG * 4;
+    final fatKcal = fatGoalG * 9;
+    final carbsGoalG = ((calorieGoal - proteinKcal - fatKcal) / 4)
+        .round()
+        .clamp(0, 999);
+
+    final trimmedName = draft.name.trim();
+    final displayName = trimmedName.isEmpty ? 'Kullanıcı' : trimmedName;
+    final initials = displayName
+        .split(RegExp(r'\s+'))
+        .where((p) => p.isNotEmpty)
+        .take(2)
+        .map((p) => p[0].toUpperCase())
+        .join();
+
+    user = UserProfile(
+      name: displayName,
+      initials: initials.isEmpty ? '?' : initials,
+      email: draft.email.trim(),
+      streakDays: 0,
+      calorieGoal: calorieGoal.round(),
+      proteinGoalG: proteinGoalG,
+      carbsGoalG: carbsGoalG,
+      fatGoalG: fatGoalG,
+      heightCm: heightCm,
+      weightKg: weightKg,
+      goalWeightKg: goalWeightKg,
+    );
+    setupComplete = true;
+    weeklyPaceKg = draft.weeklyPaceKg;
+    memberSince = DateTime.now();
+    weightHistory
+      ..clear()
+      ..add(WeightEntry(DateTime.now(), weightKg));
+    notifyListeners();
+
+    final prefs = _prefs ?? await SharedPreferences.getInstance();
+    _prefs = prefs;
+    await Future.wait([
+      prefs.setBool(_kSetupComplete, true),
+      prefs.setDouble(_kWeeklyPace, weeklyPaceKg),
+      prefs.setString(_kMemberSince, memberSince!.toIso8601String()),
+      prefs.setString(_kName, user.name),
+      prefs.setString(_kInitials, user.initials),
+      prefs.setString(_kEmail, user.email),
+      prefs.setInt(_kStreak, user.streakDays),
+      prefs.setInt(_kCalorieGoal, user.calorieGoal),
+      prefs.setInt(_kProteinGoal, user.proteinGoalG),
+      prefs.setInt(_kCarbsGoal, user.carbsGoalG),
+      prefs.setInt(_kFatGoal, user.fatGoalG),
+      prefs.setDouble(_kHeight, user.heightCm),
+      prefs.setDouble(_kWeight, user.weightKg),
+      prefs.setDouble(_kGoalWeight, user.goalWeightKg),
+    ]);
+  }
+
+  /// Adds [amount] servings (matching [food]'s serving size) of [food] to
+  /// today's [type] meal, updating its calories/description in place so the
+  /// change is visible everywhere the meal is shown.
+  void addFoodToMeal(MealType type, FoodItem food, double amount) {
+    final index = todaysMeals.indexWhere((m) => m.type == type);
+    if (index == -1) return;
+    final existing = todaysMeals[index];
+    final kcal = (food.caloriesPer100g * amount).round();
+
+    todaysMeals[index] = existing.copyWith(
+      description:
+          existing.logged ? '${existing.description}, ${food.name}' : food.name,
+      calories: existing.calories + kcal,
+      logged: true,
+    );
+    proteinConsumedG += food.proteinG * amount;
+    carbsConsumedG += food.carbsG * amount;
+    fatConsumedG += food.fatG * amount;
+    notifyListeners();
+  }
+}

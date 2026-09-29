@@ -1,0 +1,416 @@
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
+import '../../data/app_state.dart';
+import '../../router.dart';
+import '../../theme/app_colors.dart';
+import '../../widgets/app_back_button.dart';
+import '../../widgets/section_card.dart';
+
+/// Denge's Settings screen (project/Settings.dc.html / Settings-dark.dc.html):
+/// grouped notification/reminder/appearance/account rows plus a log-out
+/// button. Reached from the Profile tab's gear icon / "Ayarlar" row.
+class SettingsScreen extends StatefulWidget {
+  const SettingsScreen({super.key});
+
+  @override
+  State<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends State<SettingsScreen> {
+  // These notification toggles have no backend to persist to; they are kept
+  // as local UI state only, matching the design's default values.
+  bool _mealReminders = true;
+  bool _waterReminders = true;
+  bool _weeklySummary = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    final scheme = Theme.of(context).colorScheme;
+
+    return Scaffold(
+      body: SafeArea(
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 8, 24, 0),
+                child: Row(
+                  children: [
+                    const AppBackButton(),
+                    Expanded(
+                      child: Text(
+                        'Ayarlar',
+                        textAlign: TextAlign.center,
+                        style: textTheme.titleSmall?.copyWith(fontSize: 16),
+                      ),
+                    ),
+                    const SizedBox(width: 48),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _SectionHeader('BİLDİRİMLER'),
+                    const SizedBox(height: 8),
+                    SectionCard(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Column(
+                        children: [
+                          _SwitchRow(
+                            icon: Icons.restaurant_menu_rounded,
+                            title: 'Öğün hatırlatıcıları',
+                            subtitle: 'Öğün saatinde bildirim al',
+                            value: _mealReminders,
+                            onChanged: (v) =>
+                                setState(() => _mealReminders = v),
+                          ),
+                          _SwitchRow(
+                            icon: Icons.water_drop_rounded,
+                            title: 'Su hatırlatıcıları',
+                            subtitle: 'Her 2 saatte bir, 09:00–21:00',
+                            value: _waterReminders,
+                            showTopDivider: true,
+                            onChanged: (v) =>
+                                setState(() => _waterReminders = v),
+                          ),
+                          _SwitchRow(
+                            icon: Icons.insights_rounded,
+                            title: 'Haftalık özet',
+                            subtitle: 'Pazar akşamları ilerleme raporu',
+                            value: _weeklySummary,
+                            showTopDivider: true,
+                            onChanged: (v) =>
+                                setState(() => _weeklySummary = v),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    _SectionHeader('HATIRLATMA SAATLERİ'),
+                    const SizedBox(height: 8),
+                    SectionCard(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Column(
+                        children: [
+                          _TimeRow(
+                            icon: Icons.free_breakfast_rounded,
+                            title: 'Kahvaltı',
+                            time: '08:30',
+                          ),
+                          _TimeRow(
+                            icon: Icons.wb_sunny_rounded,
+                            title: 'Öğle yemeği',
+                            time: '12:30',
+                            showTopDivider: true,
+                          ),
+                          _TimeRow(
+                            icon: Icons.nightlight_round,
+                            title: 'Akşam yemeği',
+                            time: '19:00',
+                            showTopDivider: true,
+                          ),
+                          _TimeRow(
+                            icon: Icons.water_drop_rounded,
+                            title: 'Su aralığı',
+                            time: '2 saat',
+                            showTopDivider: true,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    _SectionHeader('GÖRÜNÜM'),
+                    const SizedBox(height: 8),
+                    SectionCard(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Consumer<AppState>(
+                        builder: (context, state, _) => Column(
+                          children: [
+                            _SwitchRow(
+                              icon: Icons.dark_mode_rounded,
+                              title: 'Karanlık mod',
+                              subtitle: 'Göz yormayan koyu tema',
+                              value: state.themeMode == ThemeMode.dark,
+                              onChanged: (v) => context.read<AppState>().setThemeMode(
+                                  v ? ThemeMode.dark : ThemeMode.light),
+                            ),
+                            _NavRow(
+                              icon: Icons.language_rounded,
+                              title: 'Dil ve erişilebilirlik',
+                              trailingText: 'Türkçe',
+                              showTopDivider: true,
+                              onTap: () => Navigator.of(context)
+                                  .push(AppRoutes.pushLanguageAccessibility()),
+                            ),
+                            _NavRow(
+                              icon: Icons.straighten_rounded,
+                              title: 'Birimler',
+                              trailingText: 'kg, cm',
+                              showTopDivider: true,
+                              onTap: () {},
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    _SectionHeader('HESAP'),
+                    const SizedBox(height: 8),
+                    SectionCard(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Column(
+                        children: [
+                          _NavRow(
+                            icon: Icons.lock_outline_rounded,
+                            title: 'Şifreyi değiştir',
+                            onTap: () {},
+                          ),
+                          _NavRow(
+                            icon: Icons.shield_outlined,
+                            title: 'Gizlilik ve veriler',
+                            showTopDivider: true,
+                            onTap: () {},
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 56,
+                      child: ElevatedButton.icon(
+                        onPressed: () {},
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor:
+                              scheme.error.withValues(alpha: 0.12),
+                          foregroundColor: scheme.error,
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                        ),
+                        icon: const Icon(Icons.logout_rounded, size: 20),
+                        label: const Text('Çıkış yap'),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Center(
+                      child: Text(
+                        'Denge · Sürüm 1.0.0',
+                        style: textTheme.bodySmall,
+                      ),
+                    ),
+                    const SizedBox(height: 32),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SectionHeader extends StatelessWidget {
+  const _SectionHeader(this.text);
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 4),
+      child: Text(
+        text,
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              fontSize: 14,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.2,
+            ),
+      ),
+    );
+  }
+}
+
+class _RowIcon extends StatelessWidget {
+  const _RowIcon(this.icon);
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 40,
+      height: 40,
+      decoration: BoxDecoration(
+        color: context.dengeColors.trackBackground,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      alignment: Alignment.center,
+      child: Icon(icon, size: 20),
+    );
+  }
+}
+
+class _SwitchRow extends StatelessWidget {
+  const _SwitchRow({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.value,
+    required this.onChanged,
+    this.showTopDivider = false,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+  final bool showTopDivider;
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    return Container(
+      decoration: showTopDivider
+          ? BoxDecoration(
+              border:
+                  Border(top: BorderSide(color: context.dengeColors.divider)))
+          : null,
+      constraints: const BoxConstraints(minHeight: 64),
+      child: Row(
+        children: [
+          _RowIcon(icon),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(title,
+                      style: textTheme.bodyLarge
+                          ?.copyWith(fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 2),
+                  Text(subtitle, style: textTheme.bodyMedium),
+                ],
+              ),
+            ),
+          ),
+          Switch(value: value, onChanged: onChanged),
+        ],
+      ),
+    );
+  }
+}
+
+class _TimeRow extends StatelessWidget {
+  const _TimeRow({
+    required this.icon,
+    required this.title,
+    required this.time,
+    this.showTopDivider = false,
+  });
+
+  final IconData icon;
+  final String title;
+  final String time;
+  final bool showTopDivider;
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      decoration: showTopDivider
+          ? BoxDecoration(
+              border:
+                  Border(top: BorderSide(color: context.dengeColors.divider)))
+          : null,
+      constraints: const BoxConstraints(minHeight: 64),
+      child: Row(
+        children: [
+          _RowIcon(icon),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(title,
+                style: textTheme.bodyLarge
+                    ?.copyWith(fontWeight: FontWeight.w700)),
+          ),
+          TextButton(
+            onPressed: () {},
+            style: TextButton.styleFrom(
+              backgroundColor: scheme.primaryContainer,
+              foregroundColor: scheme.onPrimaryContainer,
+              minimumSize: const Size(88, 48),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
+            ),
+            child: Text(time,
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _NavRow extends StatelessWidget {
+  const _NavRow({
+    required this.icon,
+    required this.title,
+    required this.onTap,
+    this.trailingText,
+    this.showTopDivider = false,
+  });
+
+  final IconData icon;
+  final String title;
+  final String? trailingText;
+  final bool showTopDivider;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        child: Container(
+          decoration: showTopDivider
+              ? BoxDecoration(
+                  border: Border(
+                      top: BorderSide(color: context.dengeColors.divider)))
+              : null,
+          constraints: const BoxConstraints(minHeight: 64),
+          child: Row(
+            children: [
+              _RowIcon(icon),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(title,
+                    style: textTheme.bodyLarge
+                        ?.copyWith(fontWeight: FontWeight.w700)),
+              ),
+              if (trailingText != null) ...[
+                Text(trailingText!,
+                    style: textTheme.bodySmall?.copyWith(fontSize: 14)),
+                const SizedBox(width: 4),
+              ],
+              Icon(Icons.chevron_right_rounded,
+                  color: textTheme.bodyMedium?.color),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
