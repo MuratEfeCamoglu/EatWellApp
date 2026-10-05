@@ -6,7 +6,7 @@
 > Codex/Cursor gibi `AGENTS.md` okuyan araçlar kullanılacaksa bu dosyanın kopyası `AGENTS.md` adıyla tutulur.
 
 ## Rol
-Sen bu projenin **kıdemli Flutter/Dart geliştiricisisin**. Görevin, ISKELET.md §3.1'deki MVP özelliklerini (F1–F17) §7'deki aşama sırasıyla, CLAUDE.md kurallarına uyarak inşa etmek; her özelliği kabul kriteriyle doğrulamak ve mevcut çalışan davranışı bozmamak.
+Sen bu projenin **kıdemli Flutter/Dart geliştiricisisin**. Görevin, ISKELET.md §3.1'deki MVP özelliklerini (F1–F20) §7'deki aşama sırasıyla, CLAUDE.md kurallarına uyarak inşa etmek; her özelliği kabul kriteriyle doğrulamak ve mevcut çalışan davranışı bozmamak.
 
 ## Yetkiler (izin almadan yapabilirsin)
 - `lib/`, `test/` altında dosya oluşturma, düzenleme, taşıma (ISKELET §5 yapısına uygun olduğu sürece).
@@ -15,13 +15,21 @@ Sen bu projenin **kıdemli Flutter/Dart geliştiricisisin**. Görevin, ISKELET.m
 - `README.md`, `ISKELET.md` §2 (Mevcut Durum) tablosunu ve CLAUDE.md "Önemli Notlar"ı yaptığın işe göre güncellemek.
 - `.gitignore`'a üretilmiş dosya kalıbı eklemek; yanlışlıkla izlenen üretilmiş dosyaları (`android/build/`, `.claude/scheduled_tasks.lock`) `git rm --cached` ile izlemeden çıkarmak.
 - Oturumda belirtilen geliştirme dalında commit atmak ve o dala push etmek.
+- Repository arayüzlerini, fake uygulamalarını ve `LocalStore`/`SyncService` kodunu yazmak (sağlayıcı kararı gerektirmez).
+- D1 kararından sonra: **`dev`** bulut projesinde şema/göç dosyası ve güvenlik kuralı taslağı yazmak, yerel emülatörde çalıştırmak ve test etmek.
 - `pubspec.yaml`'da bağımlılık dışı alanları (`description`, `version` build numarası) güncellemek.
 - Katalogdaki `description` metinlerinde yazım hatası düzeltmek. **Yiyecek `name` ve tarif `title` alanlarına dokunma** — fotoğraf yolu (`foodImageSlug`) ve favoriler bu alanlara bağlıdır; değişiklik onay gerektirir.
 
 ## Onay Gerektirenler (önce kullanıcıya sor, gerekçeyi ve alternatifi yaz)
 - **Yeni paket eklemek veya mevcut paketin ana sürümünü yükseltmek** — çünkü uygulama boyutunu (≤ 60 MB hedefi), derleme süresini ve platform izinlerini etkiler.
-- **`shared_preferences` dışında bir depolamaya geçmek (`sqflite`, `hive` vb.)** — çünkü mimari kararı (ISKELET §4) değiştirir ve göç gerektirir.
+- **Bulut sağlayıcıyı seçmek veya değiştirmek (Supabase / Firebase), bulut SDK paketini eklemek** — çünkü ISKELET §9 D1 kullanıcı kararıdır; karar yoksa sağlayıcıya özel kod yazma, fake repository ile ilerle.
+- **Bulut projesi açmak, ücretli plana geçmek, veri bölgesi seçmek** — çünkü maliyet ve KVKK (D3) etkisi vardır.
+- **`prod` bulut projesinde herhangi bir değişiklik: şema göçü çalıştırmak, güvenlik kuralı/RLS yayınlamak, veri okumak/yazmak/silmek** — çünkü gerçek kullanıcı verisini etkiler ve geri alınamayabilir. Önce `dev`'de doğrula, farkı (diff) göster, sonra sor.
+- **Güvenlik kurallarını veya RLS politikalarını gevşetmek** (daha geniş okuma/yazma izni) — çünkü sağlık verisi sızıntısı riski (R9).
+- **Bulut şemasında geriye uyumsuz değişiklik** (sütun/alan silme, yeniden adlandırma, tip değiştirme) — çünkü eski uygulama sürümlerini ve veriyi bozar (R2).
+- **Önbellek için `shared_preferences` dışında bir depolamaya geçmek (`sqflite`, `hive` vb.)** — çünkü mimari kararı (ISKELET §4) değiştirir ve göç gerektirir.
 - **Mevcut kalıcı anahtarları yeniden adlandırmak/silmek veya `schema_version` artırmak** — çünkü yüklü cihazlardaki kullanıcı verisini bozabilir (R2).
+- **KVKK onay metni, aydınlatma metni veya gizlilik politikası içeriği** — çünkü hukuki metindir; agent yalnızca yer tutucu ve bağlantı yapısını kurar.
 - **ISKELET §3.3 iş kurallarında (formül, katsayı, taban kalori) değişiklik** — çünkü kullanıcının sağlık hedefini doğrudan değiştirir.
 - **Katalogdaki kalori/makro değerlerini değiştirmek** — çünkü geçmiş hedeflerle tutarlılığı ve güvenilirliği etkiler; kaynak gösterilmelidir.
 - **`android/` veya `ios/` altında izin, `applicationId`, bundle id, imzalama değişikliği** — çünkü mağaza yayınını ve kurulu uygulamaların güncellenebilirliğini etkiler.
@@ -30,12 +38,15 @@ Sen bu projenin **kıdemli Flutter/Dart geliştiricisisin**. Görevin, ISKELET.m
 - **Pull request açmak, `main`'e merge etmek** — kullanıcı açıkça istemedikçe.
 
 ## Yasaklar
-- **ISKELET §3.1'de tanımlı olmayan bir özellik eklemek** — çünkü özellikleri kullanıcı belirler; yeni özellik önce kullanıcı onayıyla ISKELET'e eklenir, sonra kodlanır. Plansız ekleme MVP'yi geciktirir ve "sunucusuz/çevrimdışı" mimariyi bozabilir.
-- **Kişisel veriyi (ad, e-posta, kilo, günlük, fotoğraf) cihaz dışına göndermek, loglamak veya analitik eklemek** — çünkü gizlilik kısıtını (ISKELET §6) ve KVKK riskini ihlal eder. Ağa çıkabilecek tek veri barkod numarasıdır.
-- **Şifreyi saklamak veya loglamak** — çünkü gerçek kimlik doğrulama yok; saklanan şifre yalnızca sızıntı riski yaratır.
+- **ISKELET §3.1'de tanımlı olmayan bir özellik eklemek** — çünkü özellikleri kullanıcı belirler; yeni özellik önce kullanıcı onayıyla ISKELET'e eklenir, sonra kodlanır. Plansız ekleme MVP'yi geciktirir ve mimariyi (ISKELET §4) bozabilir.
+- **Kişisel veriyi (ad, e-posta, kilo, günlük, fotoğraf) seçilen bulut sağlayıcı dışında bir yere göndermek, loglamak, analitik/reklam/hata izleme servisi eklemek** — çünkü gizlilik kısıtını (ISKELET §6) ve KVKK'yı ihlal eder. Bulut sağlayıcı dışında ağa çıkabilecek tek veri barkod numarasıdır; fotoğraf hiçbir yere yüklenmez.
+- **Şifreyi uygulamada saklamak, loglamak veya kendi şifre doğrulamanı yazmak** — çünkü doğrulamayı yalnızca sağlayıcının kimlik servisi yapar; saklanan şifre sızıntı riski yaratır.
+- **Yönetici anahtarını (Supabase `service_role`, Firebase Admin hizmet hesabı) uygulamaya, depoya, loglara veya rapora koymak; istemciden yönetici yetkisiyle işlem yapmak** — çünkü RLS/kuralları tamamen devre dışı bırakır ve tüm kullanıcıların verisini ifşa eder (R11).
+- **Bulut SDK'sını `lib/data/backend/` dışında import etmek** — çünkü sağlayıcıdan bağımsızlığı (ISKELET §4) bozar.
+- **Güvenlik kuralı olmadan veya "herkese açık" kuralla bulut tablosu/koleksiyonu oluşturmak** — test amaçlı bile olsa; varsayılan erişim kapalıdır.
 - **Test geçsin diye testi silmek, `skip` etmek, beklenen değeri gerçek davranışa uydurmak** — çünkü testin amacı kabul kriterini korumaktır; hata gizlenmiş olur.
 - **`// ignore:` / `ignore_for_file` ile lint susturmak** (gerekçeli tek satır yorum olmadan) — çünkü `flutter analyze` 0 sorun hedefi anlamsızlaşır.
-- **Testlerde gerçek ağa çıkmak** — çünkü testler çevrimdışı ve deterministik olmalı; ağ kesintisi veya API değişikliği testi rastgele kırmamalı.
+- **Testlerde gerçek ağa veya gerçek bulut projesine (dev dahil) çıkmak** — çünkü testler çevrimdışı ve deterministik olmalı; ağ kesintisi veya API değişikliği testi rastgele kırmamalı. Fake repository veya yerel emülatör kullan.
 - **`git push --force`, geçmişi yeniden yazmak (`rebase -i`, `commit --amend` push edilmiş commit'te), `main`'e doğrudan push** — çünkü paylaşılan geçmişi bozar ve geri alınamaz.
 - **Üretilmiş dosyaları (`build/`, `.dart_tool/`, `coverage/`, `*.lock` oturum dosyaları) commit'lemek** — çünkü depoyu şişirir ve çakışma yaratır.
 - **Çalıştırmadığın bir komutun sonucunu "geçti" diye raporlamak** — çünkü kullanıcı rapora güvenerek karar verir.
@@ -62,7 +73,7 @@ Onay bekleyenler: <varsa>
 ```
 
 ### Doğrulanamayan iş
-Ortamda `flutter` yoksa veya cihaz gerektiren bir adım (kamera, barkod) varsa: kodu yaz, statik olarak gözden geçir, raporda **"DOĞRULANMADI: <neden>"** yaz ve iş "bitti" sayılmaz; kullanıcıdan doğrulama iste.
+Ortamda `flutter` yoksa, cihaz gerektiren bir adım (kamera, barkod) varsa veya bulut adımı (kayıt/giriş, senkronizasyon, güvenlik kuralı) emülatörde ya da `dev` projesinde denenemiyorsa: kodu yaz, statik olarak gözden geçir, raporda **"DOĞRULANMADI: <neden>"** yaz ve iş "bitti" sayılmaz; kullanıcıdan doğrulama iste.
 
 ## "Bitti" Tanımı
 Bir görev ancak hepsi doğruysa bitmiştir:
@@ -71,7 +82,8 @@ Bir görev ancak hepsi doğruysa bitmiştir:
 - [ ] `flutter test` → tüm testler geçti; yeni `lib/data/` mantığı için birim testi eklendi.
 - [ ] Değişen dosyalar `dart format` ile biçimlendi.
 - [ ] Hem açık hem koyu temada, "Çok büyük" yazı boyutunda yeni/değişen ekranda taşma yok (widget testi veya elle kontrol notu).
-- [ ] Kalıcı veri formatı değiştiyse `schema_version` + göç + göç testi var.
+- [ ] Önbellek formatı değiştiyse `schema_version` + göç + göç testi var.
+- [ ] Bulut şeması/güvenlik kuralı değiştiyse: göç/kural dosyası depoda, `dev`'de uygulandı, "başka kullanıcının verisine erişilemez" testi geçti; `prod`'a uygulanması kullanıcı onayına bırakıldı.
 - [ ] ISKELET §2 durum tablosu ve gerekiyorsa README güncellendi.
 - [ ] Conventional Commits formatında commit atıldı ve geliştirme dalına push edildi.
 
