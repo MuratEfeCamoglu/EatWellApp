@@ -119,6 +119,8 @@ Durum sütunu: **Var** = mevcut ve kriteri karşılıyor, **Kısmi** = mevcut am
 
 ### 4.2 Veri Modeli
 
+Görsel ER diyagramı (mevcut + hedef): `docs/ER_DIYAGRAMI.md`.
+
 Mevcut (`lib/data/models.dart`): `UserProfile`, `FoodItem`, `FoodCategory`, `MealType`, `MealEntry`, `Recipe`, `RecipeDifficulty`, `WeightEntry`; `app_state.dart` içinde `SetupDraft`, `Gender`, `ActivityLevel`, `WeightGoal`, `TextScaleOption`.
 
 Eklenecek / değişecek:
