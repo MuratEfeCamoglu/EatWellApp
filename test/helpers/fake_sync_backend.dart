@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:denge/data/sync/profile_snapshot.dart';
 import 'package:denge/data/sync/sync_backend.dart';
 
@@ -22,8 +24,12 @@ class FakeSyncBackend implements SyncBackend {
   Map<String, Map<String, Object?>> table(String name) =>
       tables.putIfAbsent(name, () => {});
 
+  /// While set, fetchProfile waits for it (simulates a slow network).
+  Completer<void>? gate;
+
   @override
   Future<ProfileSnapshot?> fetchProfile() async {
+    await gate?.future;
     if (failWith != null) throw failWith!;
     fetches++;
     return profile;

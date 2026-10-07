@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:denge/data/app_state.dart';
 import 'package:denge/data/auth.dart';
 import 'package:denge/data/custom_food.dart';
@@ -900,5 +902,35 @@ void main() {
       await state.signOut();
       expect(state.syncStatus, SyncStatus.off);
     });
+  });
+
+  test('deleteAllData waits for a running sync, so it cannot bring data back',
+      () async {
+    final auth = FakeAuthService()..addUser('ayse@ornek.com', 'sifre123');
+    final cloud = FakeSyncBackend();
+    final state = AppState.forTesting()
+      ..clock = (() => now)
+      ..auth = auth
+      ..syncBackend = cloud;
+    addTearDown(state.dispose);
+    await state.load(db: memoryDb());
+    await state.signIn(email: 'ayse@ornek.com', password: 'sifre123');
+    await state.giveCloudConsent();
+
+    // A sync is in flight (slow network) when the user wipes everything;
+    // the cloud still has a profile that would be pulled in.
+    cloud
+      ..profile = const ProfileSnapshot(
+          createdAt: 1, updatedAt: 2, name: 'Eski', calorieGoal: 1800)
+      ..gate = Completer<void>();
+    final running = state.syncNow();
+    final wipe = state.deleteAllData();
+    cloud.gate!.complete();
+    await running;
+    await wipe;
+
+    expect(state.setupComplete, isFalse);
+    expect(state.user.name, '');
+    expect((await loaded()).setupComplete, isFalse);
   });
 }

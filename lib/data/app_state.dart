@@ -913,6 +913,11 @@ class AppState extends ChangeNotifier {
   /// all preferences and resets this state to a first launch. The database
   /// itself stays open so the app keeps working afterwards.
   Future<void> deleteAllData() async {
+    // Let a sync that is already running finish first; otherwise it could
+    // write a just-pulled cloud profile back after the wipe (CLAUDE.md §13.7).
+    _syncTimer?.cancel();
+    await _syncRun;
+    await _profileSync;
     final db = _db;
     if (db != null) await db.wipeAllData();
     final prefs = _prefs ?? await SharedPreferences.getInstance();

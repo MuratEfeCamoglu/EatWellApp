@@ -4,8 +4,8 @@ Türk mutfağını tanıyan Flutter kalori ve beslenme takip uygulaması (Androi
 Dart paketi: `denge` (`import 'package:denge/...'`).
 
 Kullanıcının günlük kayıtları, su ve kilo geçmişi ile kendi yiyecekleri cihazdaki SQLite
-veritabanında (`drift`) saklanır. Tasarım ileride bulut senkronizasyonu eklenebilecek şekilde
-yapılmıştır (bkz. §13); bugün hiçbir veri cihazdan çıkmaz.
+veritabanında (`drift`) saklanır; uygulama her zaman buradan okur. Kullanıcı hesap açıp bulut
+rızası verirse veriler Supabase'e yedeklenir (§13). Rıza yoksa hiçbir veri cihazdan çıkmaz.
 
 ---
 
@@ -32,10 +32,12 @@ Ortamda `flutter` yoksa komutu çalıştırmış gibi davranma, çalıştırıla
    ```
    - **DAO** (`lib/data/db/daos/`): SQL sorguları. Drift tiplerini döner.
    - **Repository** (`lib/data/repositories/`): Drift satırlarını uygulama modellerine çevirir,
-     UUID ve zaman damgası üretir. İleride bulut senkronizasyonu buraya eklenecek.
+     UUID ve zaman damgası üretir.
+   - **Senkron** (`lib/data/sync/`, `SyncDao`): Repository'lerin yanında, ayrı çalışır; buluta
+     giden ve gelen satırları DAO seviyesinde okur ve yazar (§13.4).
    - **AppState:** Ekranlara veriyi sunar, repository'yi çağırır, `notifyListeners()` yapar.
-3. **Buluta hazır tasarım:** Her kullanıcı tablosu şu ortak sütunları taşır (bkz. §5.1). Bu sütunlar
-   bugün kullanılmasa bile baştan eklenir, böylece ileride senkronizasyon eklemek için şema değişmez.
+3. **Senkron sütunları:** Her kullanıcı tablosu §5.1'deki ortak sütunları taşır; bulut senkronu
+   bunlara dayanır.
 4. **Türetilen değerler saklanmaz:** Günlük kalori ve makro toplamları, seri ve rozetler her zaman
    kayıtlardan hesaplanır. Ayrı bir sayaç tutulmaz.
 5. **Kopya, referans değil:** Günlüğe eklenen yiyeceğin adı, porsiyonu, kalori ve makroları kayıt
@@ -44,8 +46,8 @@ Ortamda `flutter` yoksa komutu çalıştırmış gibi davranma, çalıştırıla
    olarak tutulur (`date` sütunu). Kesin zaman bilgisi ise UTC milisaniye olarak tutulur.
    Gece 23:30'da eklenen yemek o güne ait olur.
 7. **Silme:** Kayıtlar fiziksel olarak silinmez, `deleted_at` doldurulur (yumuşak silme). Tüm
-   okuma sorguları `deleted_at IS NULL` filtresi uygular. Bunun sebebi, ileride silme işleminin
-   de diğer cihazlara senkronlanabilmesi.
+   okuma sorguları `deleted_at IS NULL` filtresi uygular. Böylece silme işlemi de diğer cihazlara
+   senkronlanır. İstisnalar: "Tüm verilerimi sil" ve 30 günden eski silinmiş satırların temizliği.
 
 ---
 
@@ -59,7 +61,8 @@ Ortamda `flutter` yoksa komutu çalıştırmış gibi davranma, çalıştırıla
 | `created_at` | INTEGER | Oluşturulma zamanı, UTC milisaniye |
 | `updated_at` | INTEGER | Son değişiklik, UTC milisaniye. Her güncellemede yenilenir |
 | `deleted_at` | INTEGER, null olabilir | Doluysa kayıt silinmiş sayılır |
-| `synced_at` | INTEGER, null olabilir | Şimdilik hep `null`. Bulut eklenince kullanılacak |
+| `synced_at` | INTEGER, null olabilir | Buluta gönderilen sürümün `updated_at` değeri; `null` veya `updated_at`'ten küçükse satır gönderilmeyi bekliyor |
+| `server_updated_at` | INTEGER, null olabilir | Sunucunun zaman damgası (şema v2); çekme imleci buna dayanır |
 
 Bu sütunlar Drift'te ortak bir `mixin` ile tanımlanır (`SyncColumns`), her tabloda tekrar yazılmaz.
 
@@ -79,6 +82,8 @@ Bu sütunlar Drift'te ortak bir `mixin` ile tanımlanır (`SyncColumns`), her ta
 
 - Yiyecek kataloğu (`mock_data.dart`, `extra_foods.dart`, `more_foods.dart`) ve tarifler (`recipes.dart`): kodda kalır.
 - Profil, hedefler, tema, yazı boyutu, alerjiler, KVKK onayı: `shared_preferences` içinde kalır.
+  Bulut rızası varsa profil, hedefler, alerjiler ve sağlık rızası ayrıca `profiles` tablosuna
+  senkronlanır (§13.3); tema, yazı boyutu ve bildirim tercihleri cihazda kalır.
 - Günlük toplamlar, seri, rozetler: kayıtlardan hesaplanır, saklanmaz.
 
 ---
@@ -94,8 +99,9 @@ Aşama 0–6 (yerel veritabanı geçişi) tamamlandı; ayrıntılar git geçmiş
 
 ## 8. Şema değişikliği (migration) kuralları
 
-- Yayınlanmış bir şemayı **asla elle değiştirme**. Her değişiklikte `schemaVersion` bir artırılır
-  ve `MigrationStrategy.onUpgrade` içine o sürüm için adım eklenir (`from < 2` gibi).
+- Yayınlanmış bir şemayı **asla elle değiştirme**. Her değişiklikte `schemaVersion` bir artırılır,
+  `dart run drift_dev make-migrations` çalıştırılır ve `onUpgrade: stepByStep(...)` içine yeni
+  adım eklenir (`from1To2` gibi; yardımcı `app_database.steps.dart` dosyasında üretilir).
 - Sadece ekleyici değişiklik tercih et: yeni tablo, yeni null olabilir sütun, yeni indeks.
   Sütun silme veya yeniden adlandırma gerekiyorsa önce plan yazıp onay al.
 - Her sürüm için `dart run drift_dev make-migrations` ile şema dökümü (`drift_schemas/`) alınır
@@ -125,7 +131,8 @@ Aşama 0–6 (yerel veritabanı geçişi) tamamlandı; ayrıntılar git geçmiş
 - `lib/data/` altındaki her yeni saf fonksiyon için birim testi zorunlu: normal durum + en az 1 sınır durumu.
 - Tarih mantığı (gün değişimi, seri, ay sonu) her zaman sabit `DateTime` ile test edilir.
 - `SharedPreferences` testlerinde `SharedPreferences.setMockInitialValues({})` kullan.
-- Ağ çağrıları testte gerçek ağa çıkmaz, `MockClient` ile enjekte edilir.
+- Ağ çağrıları testte gerçek ağa çıkmaz: HTTP için `MockClient`, hesap ve bulut için
+  `test/helpers/` altındaki sahte `AuthService`, `SyncBackend` ve `ReminderScheduler`.
 - Test dosyaları `lib/` yapısını aynalar: `lib/data/stats/streak.dart` ↔ `test/data/stats/streak_test.dart`.
 
 ## 11. Çalışma kuralları
@@ -140,8 +147,9 @@ Aşama 0–6 (yerel veritabanı geçişi) tamamlandı; ayrıntılar git geçmiş
 
 ## 12. Tuzaklar
 
-- `AppState` tekildir (`AppState.instance`) ve `main()` içinde `await AppState.instance.load()` ile
-  yüklenir. Widget testlerinde de önce yüklenmelidir.
+- `AppState` tekildir (`AppState.instance`). `main()` önce `reminders`, `auth` ve `syncBackend`
+  nesnelerini bağlar, sonra `await AppState.instance.load(db: AppDatabase())` çağırır. Testlerde
+  `AppState.forTesting()` kullanılır ve önce yüklenir.
 - `addFoodToMeal` imzası 3 ekran tarafından kullanılıyor, imzayı değiştirirsen hepsini güncelle.
 - Tarif favorileri **başlığa** göre saklanıyor, tarif başlığını değiştirmek favoriyi kırar.
 - Su hedefi `MockData.waterGlassesGoal` (10 bardak × 250 ml = 2,5 L).
@@ -176,8 +184,9 @@ bugünkü gibi tamamen yerel çalışmaya devam eder.
    satırın `updated_at` değeri mevcuttan küçükse güncellemeyi yok sayar; böylece eski bir cihaz
    yeni veriyi ezemez.
 6. **Hesap ve cihaz:** Bir cihazda aynı anda tek hesap. Hesapsız kullanırken biriken kayıtlar ilk
-   girişte o hesaba yüklenir. Oturum kapatılırken önce bekleyen her şey gönderilir, sonra yerel
-   veritabanı temizlenir (başka biri aynı telefonda kendi hesabıyla girebilsin).
+   girişte (rıza verilince) o hesaba yüklenir. Hedef (B6): oturum kapatılırken önce bekleyen her
+   şey gönderilir, sonra yerel veritabanı temizlenir. **Şu an** çıkış yalnızca oturumu kapatır,
+   yerel kayıtlar telefonda kalır.
 7. **Gönderilmeyenler:** Yemek kataloğu ve tarifler (kodda), tema / yazı boyutu / hareket azaltma,
    bildirim tercihleri (cihaza özgü), tarif favorileri (şimdilik).
 
@@ -218,9 +227,10 @@ Aşama B1–B3 tamamlandı (ayrıntılar git geçmişinde). Alınan ve korunmas�
 Bir senkron turu sırayla: **profil → gönder → çek**. Aynı anda tek tur çalışır (kilit).
 
 - **Gönder:** Her tablo için `synced_at IS NULL OR updated_at > synced_at` olan satırlar, en fazla
-  100'lük gruplar halinde `upsert` edilir (su için `upsert_water`). Başarılı her grup için yerelde
-  `synced_at = gönderim anı` ve `server_updated_at` yazılır. Su RPC'si farklı bir `id` dönerse yerel
-  satır o `id` ile değiştirilir (aynı gün için tek satır kuralı korunur).
+  100'lük gruplar halinde `upsert` edilir (su için `upsert_water`). Onaylanan her satıra yerelde
+  `synced_at = gönderilen updated_at` ve `server_updated_at` yazılır; satır bu arada değiştiyse
+  işaretlenmez (B4 kararı). Su RPC'si farklı bir `id` dönerse yerel satır o `id` ile değiştirilir
+  (aynı gün için tek satır kuralı korunur).
 - **Çek:** `server_updated_at > pulled_until` olan satırlar `server_updated_at` sırasıyla, 500'lük
   sayfalarla alınır. Her satır için:
   - Yerelde yoksa eklenir.
@@ -230,20 +240,21 @@ Bir senkron turu sırayla: **profil → gönder → çek**. Aynı anda tek tur �
   - Yazılan her satırda `synced_at = updated_at` olur, böylece geri gönderilmez.
   - Sayfa bitince `pulled_until` güncellenir. Hepsi tek `transaction` içinde (§9).
 - **Ne zaman:** uygulama açılınca, öne gelince, her yazmadan 5 sn sonra (art arda yazmalar
-  birleşir) ve Ayarlar'daki **"Şimdi eşitle"** ile. Ağ hatasında sessizce vazgeçilir, bir sonraki
-  tetikte tekrar denenir (üstel bekleme, en fazla 15 dk).
-- **Durum:** `AppState.syncStatus` (`kapalı / eşitleniyor / güncel / hata`) ve son başarılı eşitleme
-  zamanı; Ayarlar'da Türkçe gösterilir ("Son eşitleme: bugün 14:32").
-- Repository'ler değişmez: senkron, DAO seviyesinde ayrı sorgular kullanır (`dirtyRows`,
-  `applyRemote`, `markSynced`).
+  birleşir) ve Ayarlar → Bulut yedekleme'deki **"Şimdi eşitle"** ile. Ağ hatasında artan
+  aralıklarla (30 sn, 1 dk, 2 dk … en fazla 15 dk) tekrar denenir.
+- **Durum:** `AppState.syncStatus` (`off / pending / syncing / upToDate / error`; ekranda
+  Kapalı / Açık / Eşitleniyor… / Güncel / Eşitlenemedi) ve `lastSyncedAt`.
+- Repository'ler değişmez: senkron, `SyncDao`'daki ayrı sorguları kullanır (`dirtyRows`,
+  `markSynced`, `adoptServerWater`; çekme için B5'te `applyRemote`).
 
 ### 13.5 KVKK
 
 - Sağlık verisi (kilo, alerji, beslenme) **yurt dışına (AB) aktarılacağı** için ayrı ve açık rıza
-  gerekir. Rıza metni güncellenir ve `kConsentVersion` artırılır. Rıza verilmeden **hiçbir veri
-  gönderilmez**; kullanıcı hesap açsa bile reddederse uygulama yerel çalışmaya devam eder.
-- Rıza geri alınabilir (Ayarlar): senkron durur ve kullanıcıya buluttaki verisini silme seçeneği
-  sunulur.
+  gerekir: `CloudConsentScreen`, sürümü `AppState.kCloudConsentVersion` (sağlık verisi rızasının
+  `kConsentVersion`'ından ayrı; metin önemli ölçüde değişirse bu sürüm artırılır). Rıza verilmeden
+  **hiçbir veri gönderilmez**; kullanıcı hesap açsa bile reddederse uygulama yerel çalışmaya devam eder.
+- Rıza Ayarlar → Bulut yedekleme'den geri alınabilir; senkron durur. Buluttaki verinin silinmesi
+  hesap silmeyle gelir (B6).
 - "Tüm verilerimi sil", oturum açıksa önce `delete_my_account()` çağırır, sonra yereli siler.
   Sunucu silmesi başarısız olursa yerel silme yapılmaz ve kullanıcıya söylenir.
 - Gizlilik metninde: hangi veriler, nerede (Supabase, AB), ne kadar süre, nasıl silinir.
@@ -299,5 +310,6 @@ ekranına dönüyor.
 - `server_updated_at`'i istemci yazamaz; çekme imleci istemcinin saatine **asla** dayanmaz.
 - `date` sütunları cihazın yerel gününe göre (§4.6). Kullanıcı saat dilimi değiştirince geçmiş
   günler kaymaz; bu bilinçli bir karardır.
-- Senkron turu "Tüm verilerimi sil" veya çıkış sırasında çalışmamalı (kilit ile engellenir).
+- Senkron turu "Tüm verilerimi sil" veya çıkış sırasında çalışmamalı: `deleteAllData` ve `signOut`
+  önce zamanlayıcıyı iptal eder, sonra süren turun bitmesini bekler.
 - Supabase istemcisi testlerde gerçek ağa çıkmaz (§10); senkron testleri sahte `SyncBackend` ile.
