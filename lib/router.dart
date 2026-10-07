@@ -1,13 +1,20 @@
 import 'package:flutter/material.dart';
 
+import 'data/custom_food.dart';
 import 'data/models.dart';
+import 'screens/auth/cloud_consent_screen.dart';
 import 'screens/auth/health_consent_screen.dart';
 import 'screens/auth/login_screen.dart';
+import 'screens/auth/password_screens.dart';
 import 'screens/auth/sign_up_screen.dart';
 import 'screens/diary/barcode_screen.dart';
+import 'screens/food/custom_food_screen.dart';
 import 'screens/food/food_detail_screen.dart';
 import 'screens/main_shell.dart';
 import 'screens/onboarding/onboarding_screen.dart';
+import 'screens/profile/goals_screen.dart';
+import 'screens/profile/notifications_screen.dart';
+import 'screens/profile/personal_info_screen.dart';
 import 'screens/recipes/recipe_detail_screen.dart';
 import 'screens/search/search_screen.dart';
 import 'screens/settings/language_accessibility_screen.dart';
@@ -41,6 +48,13 @@ class AppRoutes {
   static const barcode = '/barcode';
   static const foodDetail = '/food-detail';
   static const recipeDetail = '/recipe-detail';
+  static const customFood = '/custom-food';
+  static const personalInfo = '/profile/personal-info';
+  static const goals = '/profile/goals';
+  static const notifications = '/profile/notifications';
+  static const forgotPassword = '/forgot-password';
+  static const cloudConsent = '/cloud-consent';
+  static const newPassword = '/new-password';
   static const settings = '/settings';
   static const languageAccessibility = '/settings/language-accessibility';
 
@@ -65,10 +79,48 @@ class AppRoutes {
   /// Routes that require arguments are pushed with [Navigator.push] and a
   /// [MaterialPageRoute] directly (see [pushFoodDetail], [pushRecipeDetail])
   /// rather than through the named-route table above.
-  static Route<void> pushFoodDetail(FoodItem food, {MealType? initialMeal}) {
+  static Route<void> pushFoodDetail(
+    FoodItem food, {
+    MealType? initialMeal,
+    FoodLogSource source = FoodLogSource.catalog,
+    String? sourceRef,
+  }) {
     return MaterialPageRoute(
       settings: const RouteSettings(name: foodDetail),
-      builder: (_) => FoodDetailScreen(food: food, initialMeal: initialMeal),
+      builder: (_) => FoodDetailScreen(
+        food: food,
+        initialMeal: initialMeal,
+        source: source,
+        sourceRef: sourceRef,
+      ),
+    );
+  }
+
+  /// Opens the "add your own food" form, optionally pre-filled with the
+  /// search text or a scanned [barcode]; with [existing] it edits that food.
+  static Route<void> pushCustomFood({
+    String initialName = '',
+    String? barcode,
+    MealType? initialMeal,
+    CustomFood? existing,
+  }) {
+    return MaterialPageRoute(
+      settings: const RouteSettings(name: customFood),
+      builder: (_) => CustomFoodScreen(
+        initialName: initialName,
+        barcode: barcode,
+        initialMeal: initialMeal,
+        existing: existing,
+      ),
+    );
+  }
+
+  /// Opens the food detail screen in edit mode for a diary entry.
+  static Route<void> pushEditEntry(FoodLogEntry entry) {
+    return MaterialPageRoute(
+      settings: const RouteSettings(name: foodDetail),
+      builder: (_) =>
+          FoodDetailScreen(food: entry.asServingFood, editing: entry),
     );
   }
 
@@ -102,6 +154,38 @@ class AppRoutes {
       builder: (_) => RecipeDetailScreen(recipe: recipe, heroTag: heroTag),
     );
   }
+
+  static Route<void> pushPersonalInfo() => MaterialPageRoute(
+        settings: const RouteSettings(name: personalInfo),
+        builder: (_) => const PersonalInfoScreen(),
+      );
+
+  static Route<void> pushGoals() => MaterialPageRoute(
+        settings: const RouteSettings(name: goals),
+        builder: (_) => const GoalsScreen(),
+      );
+
+  static Route<void> pushNotifications() => MaterialPageRoute(
+        settings: const RouteSettings(name: notifications),
+        builder: (_) => const NotificationsScreen(),
+      );
+
+  static Route<void> pushForgotPassword({String initialEmail = ''}) =>
+      MaterialPageRoute(
+        settings: const RouteSettings(name: forgotPassword),
+        builder: (_) => ForgotPasswordScreen(initialEmail: initialEmail),
+      );
+
+  /// Resolves to true when the cloud consent was given.
+  static Route<bool> pushCloudConsent() => MaterialPageRoute<bool>(
+        settings: const RouteSettings(name: cloudConsent),
+        builder: (_) => const CloudConsentScreen(),
+      );
+
+  static Route<void> pushNewPassword() => MaterialPageRoute(
+        settings: const RouteSettings(name: newPassword),
+        builder: (_) => const NewPasswordScreen(),
+      );
 
   static Route<void> pushSettings() {
     return MaterialPageRoute(

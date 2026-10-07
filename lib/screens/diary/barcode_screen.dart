@@ -2,7 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:provider/provider.dart';
 
+import '../../data/app_state.dart';
 import '../../data/models.dart';
 import '../../data/product_lookup.dart';
 import '../../router.dart';
@@ -65,8 +67,24 @@ class _BarcodeScreenState extends State<BarcodeScreen> {
     }
   }
 
+  /// Set when the scanned code matched one of the user's own foods, so the
+  /// diary entry points at that food rather than at the raw barcode.
+  String? _customFoodId;
+
   Future<void> _lookup(String code) async {
-    setState(() => _result = null);
+    // The user's own foods win over the catalog and Open Food Facts.
+    final custom = context.read<AppState>().customFoodForBarcode(code);
+    if (custom != null) {
+      setState(() {
+        _customFoodId = custom.id;
+        _result = ProductFound(custom.asFoodItem);
+      });
+      return;
+    }
+    setState(() {
+      _customFoodId = null;
+      _result = null;
+    });
     final result = await lookupBarcode(code);
     // Ignore a stale answer if the user already rescanned or left.
     if (!mounted || _scannedCode != code) return;
@@ -86,7 +104,14 @@ class _BarcodeScreenState extends State<BarcodeScreen> {
   /// had (the product's values are per 100 g) and the meal to add it to.
   void _chooseAmount(FoodItem product) {
     Navigator.of(context)
-        .pushReplacement(AppRoutes.pushFoodDetail(product, initialMeal: _meal));
+        .pushReplacement(AppRoutes.pushFoodDetail(
+          product,
+          initialMeal: _meal,
+          source: _customFoodId == null
+              ? FoodLogSource.barcode
+              : FoodLogSource.custom,
+          sourceRef: _customFoodId ?? _scannedCode,
+        ));
   }
 
   @override
@@ -196,8 +221,13 @@ class _BarcodeScreenState extends State<BarcodeScreen> {
                         onChooseAmount: () => _chooseAmount(food),
                         onRescan: _rescan,
                       ),
-                    ProductNotFound() =>
-                      _ProductNotFoundSheet(code: _scannedCode!, onRescan: _rescan),
+                    ProductNotFound() => _ProductNotFoundSheet(
+                        code: _scannedCode!,
+                        onRescan: _rescan,
+                        onAddOwn: () => Navigator.of(context).pushReplacement(
+                            AppRoutes.pushCustomFood(
+                                barcode: _scannedCode, initialMeal: _meal)),
+                      ),
                     ProductLookupFailed(:final message) => _LookupFailedSheet(
                         message: message,
                         onRetry: () => _lookup(_scannedCode!),
@@ -582,10 +612,15 @@ class _Nutrient extends StatelessWidget {
 }
 
 class _ProductNotFoundSheet extends StatelessWidget {
-  const _ProductNotFoundSheet({required this.code, required this.onRescan});
+  const _ProductNotFoundSheet({
+    required this.code,
+    required this.onRescan,
+    required this.onAddOwn,
+  });
 
   final String code;
   final VoidCallback onRescan;
+  final VoidCallback onAddOwn;
 
   @override
   Widget build(BuildContext context) {
@@ -601,6 +636,13 @@ class _ProductNotFoundSheet extends StatelessWidget {
             subtitle: 'Barkod: $code\nBu ürün veritabanında kayıtlı değil.',
           ),
           const SizedBox(height: 16),
+          ElevatedButton.icon(
+            onPressed: onAddOwn,
+            icon: const Icon(Icons.add_rounded),
+            style: ElevatedButton.styleFrom(minimumSize: const Size.fromHeight(56)),
+            label: const Text('Bu ürünü kendin ekle'),
+          ),
+          const SizedBox(height: 8),
           Row(
             children: [
               Expanded(

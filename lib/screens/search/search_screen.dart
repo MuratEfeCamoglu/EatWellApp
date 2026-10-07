@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../data/app_state.dart';
+import '../../data/custom_food.dart';
 import '../../data/food_recognition.dart';
+import '../../data/food_search.dart';
 import '../../data/models.dart';
 import '../../data/mock_data.dart';
 import '../../router.dart';
@@ -36,8 +38,9 @@ MealType defaultMealForNow() {
 
 /// Ports project/Search.dc.html (default/browse state) and
 /// project/SearchEmpty.dc.html (no-results state). Filters
-/// [MockData.searchResults] locally as the user types; tapping a result
-/// pushes [AppRoutes.pushFoodDetail].
+/// [MockData.searchResults] and the user's own foods locally as the user
+/// types (own foods listed first); tapping a result pushes
+/// [AppRoutes.pushFoodDetail].
 class SearchScreen extends StatefulWidget {
   const SearchScreen({super.key, this.initialMeal});
 
@@ -80,35 +83,34 @@ class _SearchScreenState extends State<SearchScreen> {
     ];
   }
 
-  /// Only foods that make sense for [_meal] — searching while adding to
-  /// "Kahvaltı" shouldn't surface dinner-only dishes and vice versa.
-  Iterable<FoodItem> get _inMeal =>
-      MockData.searchResults.where((f) => f.meals.contains(_meal));
-
-  /// Categories that have at least one food for [_meal], in display order.
-  List<FoodCategory> get _availableCategories {
-    final present = _inMeal.map((f) => f.category).toSet();
+  /// Categories that have at least one catalog food for [_meal] (only
+  /// foods that make sense for it — searching while adding to "Kahvaltı"
+  /// shouldn't surface dinner-only dishes) or one own food, in display
+  /// order.
+  List<FoodCategory> _availableCategories(List<CustomFood> custom) {
+    final present = {
+      for (final f in MockData.searchResults)
+        if (f.meals.contains(_meal)) f.category,
+      for (final c in custom) c.category,
+    };
     return FoodCategory.values.where(present.contains).toList();
   }
 
-  List<FoodItem> get _filtered {
-    final q = _query.toLowerCase();
-    return _inMeal
-        .where((f) => _category == null || f.category == _category)
-        .where((f) =>
-            q.isEmpty || f.name.toLowerCase().contains(q) || f.brand.toLowerCase().contains(q))
-        .toList();
-  }
-
-  /// [foods] grouped under their category headers: each entry is either a
-  /// [FoodCategory] (section header) or a [FoodItem] (row).
-  List<Object> _grouped(List<FoodItem> foods) {
-    final entries = <Object>[];
+  /// The user's own foods (under a "Kendi yiyeceklerin" header) followed by
+  /// catalog [foods] grouped under their category headers. Each entry is a
+  /// section header ([_Section]), a [CustomFood] or a [FoodItem] row.
+  List<Object> _grouped(List<CustomFood> custom, List<FoodItem> foods) {
+    final entries = <Object>[
+      if (custom.isNotEmpty) ...[
+        _Section(Icons.person_rounded, 'Kendi yiyeceklerin', custom.length),
+        ...custom,
+      ],
+    ];
     for (final category in FoodCategory.values) {
       final inCategory = foods.where((f) => f.category == category);
       if (inCategory.isEmpty) continue;
       entries
-        ..add(category)
+        ..add(_Section(category.icon, category.label, inCategory.length))
         ..addAll(inCategory);
     }
     return entries;
@@ -177,19 +179,31 @@ class _SearchScreenState extends State<SearchScreen> {
         candidates: result.candidates,
         onPick: (food) {
           Navigator.of(context).pop();
-          Navigator.of(this.context)
-              .push(AppRoutes.pushFoodDetail(food, initialMeal: _meal));
+          Navigator.of(this.context).push(AppRoutes.pushFoodDetail(food,
+              initialMeal: _meal, source: FoodLogSource.photo));
         },
       ),
     );
   }
 
-  void _quickAdd(FoodItem food) {
-    context.read<AppState>().addFoodToMeal(_meal, food, 1);
-    ScaffoldMessenger.of(context)
+  Future<void> _quickAdd(FoodItem food, {CustomFood? custom}) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final meal = _meal;
+    try {
+      await context.read<AppState>().addFoodToMeal(meal, food, 1,
+          source: custom == null ? FoodLogSource.catalog : FoodLogSource.custom,
+          sourceRef: custom?.id);
+    } catch (_) {
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(const SnackBar(
+            content: Text('Yiyecek kaydedilemedi, lütfen tekrar dene.')));
+      return;
+    }
+    messenger
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(
-          content: Text('${food.name} ${_mealLabels[_meal]} listesine eklendi')));
+          content: Text('${food.name} ${_mealLabels[meal]} listesine eklendi')));
   }
 
   @override
@@ -202,9 +216,16 @@ class _SearchScreenState extends State<SearchScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colors = context.dengeColors;
-    final results = _filtered;
-    final entries = _grouped(results);
-    final categories = _availableCategories;
+    final custom = context.watch<AppState>().customFoods;
+    final results = searchFoods(
+      catalog: MockData.searchResults,
+      custom: custom,
+      query: _query,
+      meal: _meal,
+      category: _category,
+    );
+    final entries = _grouped(results.custom, results.catalog);
+    final categories = _availableCategories(custom);
 
     return Scaffold(
       body: SafeArea(
@@ -338,21 +359,42 @@ class _SearchScreenState extends State<SearchScreen> {
                   ? _SearchEmptyState(
                       query: _query,
                       onScanBarcode: () => Navigator.of(context).push(AppRoutes.pushBarcode(initialMeal: _meal)),
+                      onAddOwn: () => Navigator.of(context).push(
+                          AppRoutes.pushCustomFood(
+                              initialName: _query.trim(), initialMeal: _meal)),
                     )
                   : ListView.builder(
                       padding: const EdgeInsets.fromLTRB(24, 0, 24, 96),
                       itemCount: entries.length,
                       itemBuilder: (context, i) {
                         final entry = entries[i];
-                        if (entry is FoodCategory) {
+                        if (entry is _Section) {
                           return _CategoryHeader(
-                            category: entry,
-                            count: results.where((f) => f.category == entry).length,
+                            icon: entry.icon,
+                            label: entry.label,
+                            count: entry.count,
                             first: i == 0,
                           );
                         }
-                        final food = entry as FoodItem;
                         final tint = _rowTints(context)[i % 4];
+                        if (entry is CustomFood) {
+                          final food = entry.asFoodItem;
+                          return _FoodRow(
+                            food: food,
+                            bg: tint.bg,
+                            fg: tint.fg,
+                            onTap: () => Navigator.of(context).push(
+                                AppRoutes.pushFoodDetail(food,
+                                    initialMeal: _meal,
+                                    source: FoodLogSource.custom,
+                                    sourceRef: entry.id)),
+                            // Long-press edits or deletes an own food.
+                            onLongPress: () => Navigator.of(context)
+                                .push(AppRoutes.pushCustomFood(existing: entry)),
+                            onQuickAdd: () => _quickAdd(food, custom: entry),
+                          );
+                        }
+                        final food = entry as FoodItem;
                         return _FoodRow(
                           food: food,
                           bg: tint.bg,
@@ -453,14 +495,24 @@ class _CategoryChip extends StatelessWidget {
   }
 }
 
+/// A section header entry in the result list.
+class _Section {
+  const _Section(this.icon, this.label, this.count);
+  final IconData icon;
+  final String label;
+  final int count;
+}
+
 class _CategoryHeader extends StatelessWidget {
   const _CategoryHeader({
-    required this.category,
+    required this.icon,
+    required this.label,
     required this.count,
     required this.first,
   });
 
-  final FoodCategory category;
+  final IconData icon;
+  final String label;
   final int count;
   final bool first;
 
@@ -472,10 +524,10 @@ class _CategoryHeader extends StatelessWidget {
       padding: EdgeInsets.only(top: first ? 4 : 20, bottom: 4),
       child: Row(
         children: [
-          Icon(category.icon, size: 20, color: theme.colorScheme.primary),
+          Icon(icon, size: 20, color: theme.colorScheme.primary),
           const SizedBox(width: 8),
           Expanded(
-            child: Text(category.label,
+            child: Text(label,
                 style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
           ),
           Container(
@@ -499,6 +551,7 @@ class _FoodRow extends StatelessWidget {
     required this.fg,
     required this.onTap,
     required this.onQuickAdd,
+    this.onLongPress,
   });
 
   final FoodItem food;
@@ -506,6 +559,7 @@ class _FoodRow extends StatelessWidget {
   final Color fg;
   final VoidCallback onTap;
   final VoidCallback onQuickAdd;
+  final VoidCallback? onLongPress;
 
   @override
   Widget build(BuildContext context) {
@@ -522,6 +576,7 @@ class _FoodRow extends StatelessWidget {
                   color: Colors.transparent,
                   child: InkWell(
                     onTap: onTap,
+                    onLongPress: onLongPress,
                     child: Row(
                       children: [
                         FoodImage(food: food, size: 52, radius: 14, bg: bg, fg: fg),
@@ -580,10 +635,15 @@ class _FoodRow extends StatelessWidget {
 }
 
 class _SearchEmptyState extends StatelessWidget {
-  const _SearchEmptyState({required this.query, required this.onScanBarcode});
+  const _SearchEmptyState({
+    required this.query,
+    required this.onScanBarcode,
+    required this.onAddOwn,
+  });
 
   final String query;
   final VoidCallback onScanBarcode;
+  final VoidCallback onAddOwn;
 
   @override
   Widget build(BuildContext context) {
@@ -620,11 +680,7 @@ class _SearchEmptyState extends StatelessWidget {
           child: Column(
             children: [
               ElevatedButton.icon(
-                onPressed: () {
-                  ScaffoldMessenger.of(context)
-                    ..hideCurrentSnackBar()
-                    ..showSnackBar(const SnackBar(content: Text('Bu özellik yakında')));
-                },
+                onPressed: onAddOwn,
                 icon: const Icon(Icons.add_rounded),
                 label: const Text('Yiyeceği kendin ekle'),
                 style: ElevatedButton.styleFrom(minimumSize: const Size.fromHeight(56)),

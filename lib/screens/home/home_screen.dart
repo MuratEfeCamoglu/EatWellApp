@@ -66,9 +66,17 @@ class _HomeScreenState extends State<HomeScreen> {
   /// Recreates the design's `pick` logic: tapping glass [index] (0-based)
   /// fills up to and including it if it wasn't full yet, or empties back to
   /// it if it (and everything after it) was already full.
-  void _pickGlass(int index, int current) {
+  Future<void> _pickGlass(int index, int current) async {
     final state = context.read<AppState>();
-    state.setWaterGlasses(index < current ? index : index + 1);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await state.setWaterGlasses(index < current ? index : index + 1);
+    } catch (_) {
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(const SnackBar(
+            content: Text('Su kaydı kaydedilemedi, lütfen tekrar dene.')));
+    }
   }
 
   static String _thousands(int n) {
@@ -139,7 +147,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               size: 20, color: colors.streak),
                           const SizedBox(width: 6),
                           Text(
-                            '${state.user.streakDays}',
+                            '${state.streakDays}',
                             style: TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.w800,
@@ -452,7 +460,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text('${state.user.streakDays} günlük seri!',
+                  Text('${state.streakDays} günlük seri!',
                       style: theme.textTheme.titleMedium),
                   Text('Bugünü de kaydet, seriyi koru.',
                       style: theme.textTheme.bodyMedium),

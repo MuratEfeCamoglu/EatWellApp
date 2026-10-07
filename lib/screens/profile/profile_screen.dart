@@ -65,9 +65,10 @@ class ProfileScreen extends StatelessWidget {
         ? _thousands(user.calorieGoal)
         : 'Haftada ${_fmt1(weeklyPace)} kg · ${_thousands(user.calorieGoal)}';
 
-    final daysLogged = state.hasLoggedFoodToday ? 1 : 0;
-    final badgeFirstStep = state.hasLoggedFoodToday;
-    final badgeStreak7 = user.streakDays >= 7;
+    // Badges and stats are derived from the diary, never stored.
+    final daysLogged = state.loggedDaysCount;
+    final badgeFirstStep = daysLogged >= 1;
+    final badgeStreak7 = state.streakDays >= 7;
     final badgeWaterMaster = state.waterGlasses >= MockData.waterGlassesGoal;
     final badgeProteinHunter =
         user.proteinGoalG > 0 && state.proteinConsumedG >= user.proteinGoalG;
@@ -153,7 +154,8 @@ class ProfileScreen extends StatelessWidget {
                               _SquareIconButton(
                                 icon: Icons.edit_rounded,
                                 semanticLabel: 'Profili düzenle',
-                                onTap: () {},
+                                onTap: () => Navigator.of(context)
+                                    .push(AppRoutes.pushPersonalInfo()),
                               ),
                             ],
                           ),
@@ -168,7 +170,7 @@ class ProfileScreen extends StatelessWidget {
                             child: Row(
                               children: [
                                 _StatColumn(
-                                    value: '${user.streakDays}',
+                                    value: '${state.streakDays}',
                                     label: 'gün seri'),
                                 _StatColumn(value: '$daysLogged', label: 'gün kayıt'),
                                 _StatColumn(value: '$unlockedBadges', label: 'rozet'),
@@ -330,7 +332,8 @@ class ProfileScreen extends StatelessWidget {
                           _MenuRow(
                             icon: Icons.person_outline_rounded,
                             label: 'Kişisel bilgiler',
-                            onTap: () {},
+                            onTap: () => Navigator.of(context)
+                                .push(AppRoutes.pushPersonalInfo()),
                           ),
                           _MenuRow(
                             icon: Icons.track_changes_rounded,
@@ -338,13 +341,18 @@ class ProfileScreen extends StatelessWidget {
                             trailingText:
                                 '${_thousands(user.calorieGoal)} kcal',
                             showTopDivider: true,
-                            onTap: () {},
+                            onTap: () =>
+                                Navigator.of(context).push(AppRoutes.pushGoals()),
                           ),
                           _MenuRow(
                             icon: Icons.notifications_none_rounded,
                             label: 'Bildirimler',
+                            trailingText: state.notificationSettings.anyEnabled
+                                ? 'Açık'
+                                : 'Kapalı',
                             showTopDivider: true,
-                            onTap: () {},
+                            onTap: () => Navigator.of(context)
+                                .push(AppRoutes.pushNotifications()),
                           ),
                           _MenuRow(
                             icon: Icons.tune_rounded,

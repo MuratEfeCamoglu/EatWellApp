@@ -1,18 +1,91 @@
+import 'dart:developer' as developer;
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'data/app_state.dart';
+import 'data/backend/supabase_auth_service.dart';
+import 'data/backend/supabase_sync_backend.dart';
+import 'data/db/app_database.dart';
+import 'data/local_reminder_scheduler.dart';
 import 'router.dart';
 import 'theme/app_theme.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await AppState.instance.load();
+  // Reminders are optional: if the notification plugin can't start, the
+  // app keeps the no-op scheduler and works without them.
+  try {
+    final reminders = LocalReminderScheduler();
+    await reminders.init();
+    AppState.instance.reminders = reminders;
+  } catch (e, st) {
+    developer.log('Reminder setup failed', error: e, stackTrace: st);
+  }
+  // Accounts only exist when the Supabase settings were passed with
+  // --dart-define-from-file=env/dev.json; otherwise the app is local-only.
+  if (SupabaseConfig.isConfigured) {
+    try {
+      AppState.instance
+        ..auth = await SupabaseAuthService.initialize()
+        ..syncBackend = SupabaseSyncBackend.forInitializedClient();
+    } catch (e, st) {
+      developer.log('Supabase setup failed', error: e, stackTrace: st);
+    }
+  }
+  await AppState.instance.load(db: AppDatabase());
   runApp(const DengeApp());
 }
 
-class DengeApp extends StatelessWidget {
+/// Lets [DengeApp] show app-level messages (e.g. a database error) and
+/// screens (the password-reset link) without a screen's own [BuildContext].
+final _messengerKey = GlobalKey<ScaffoldMessengerState>();
+final _navigatorKey = GlobalKey<NavigatorState>();
+
+class DengeApp extends StatefulWidget {
   const DengeApp({super.key});
+
+  @override
+  State<DengeApp> createState() => _DengeAppState();
+}
+
+class _DengeAppState extends State<DengeApp> with WidgetsBindingObserver {
+  /// Back in the foreground: catch up on the day change and sync.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      AppState.instance.onResumed();
+    }
+  }
+
+  /// A password-reset link opened the app: ask for the new password.
+  void _onAppStateChanged() {
+    if (AppState.instance.takePendingPasswordRecovery()) {
+      _navigatorKey.currentState?.push(AppRoutes.pushNewPassword());
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    AppState.instance.removeListener(_onAppStateChanged);
+    super.dispose();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    AppState.instance.addListener(_onAppStateChanged);
+    WidgetsBinding.instance.addObserver(this);
+    final error = AppState.instance.storageError;
+    if (error != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _messengerKey.currentState?.showSnackBar(
+          SnackBar(content: Text(error), duration: const Duration(seconds: 8)),
+        );
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -27,6 +100,8 @@ class DengeApp extends StatelessWidget {
           final (themeMode, reduceMotion, textScale) = settings;
           return MaterialApp(
             title: 'Denge',
+            scaffoldMessengerKey: _messengerKey,
+            navigatorKey: _navigatorKey,
             debugShowCheckedModeBanner: false,
             themeMode: themeMode,
             theme: AppTheme.light(reduceMotion: reduceMotion),

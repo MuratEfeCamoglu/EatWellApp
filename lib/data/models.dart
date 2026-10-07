@@ -5,6 +5,8 @@ library;
 
 import 'package:flutter/material.dart' show IconData, Icons;
 
+import 'db/date_key.dart';
+
 class UserProfile {
   const UserProfile({
     required this.name,
@@ -32,19 +34,31 @@ class UserProfile {
   final double weightKg;
   final double goalWeightKg;
 
-  UserProfile copyWith({double? weightKg, int? streakDays}) {
+  UserProfile copyWith({
+    String? name,
+    String? initials,
+    String? email,
+    double? weightKg,
+    int? streakDays,
+    int? calorieGoal,
+    int? proteinGoalG,
+    int? carbsGoalG,
+    int? fatGoalG,
+    double? heightCm,
+    double? goalWeightKg,
+  }) {
     return UserProfile(
-      name: name,
-      initials: initials,
-      email: email,
+      name: name ?? this.name,
+      initials: initials ?? this.initials,
+      email: email ?? this.email,
       streakDays: streakDays ?? this.streakDays,
-      calorieGoal: calorieGoal,
-      proteinGoalG: proteinGoalG,
-      carbsGoalG: carbsGoalG,
-      fatGoalG: fatGoalG,
-      heightCm: heightCm,
+      calorieGoal: calorieGoal ?? this.calorieGoal,
+      proteinGoalG: proteinGoalG ?? this.proteinGoalG,
+      carbsGoalG: carbsGoalG ?? this.carbsGoalG,
+      fatGoalG: fatGoalG ?? this.fatGoalG,
+      heightCm: heightCm ?? this.heightCm,
       weightKg: weightKg ?? this.weightKg,
-      goalWeightKg: goalWeightKg,
+      goalWeightKg: goalWeightKg ?? this.goalWeightKg,
     );
   }
 
@@ -235,4 +249,136 @@ class WeightEntry {
   const WeightEntry(this.date, this.kg);
   final DateTime date;
   final double kg;
+}
+
+/// Where a diary entry came from; stored as its `name`.
+enum FoodLogSource { catalog, recipe, barcode, photo, custom }
+
+/// One food in the diary, with its name, serving and nutrition copied at
+/// log time so later catalog changes never rewrite past days.
+class FoodLogEntry {
+  const FoodLogEntry({
+    required this.id,
+    required this.date,
+    required this.meal,
+    required this.foodName,
+    this.brand = '',
+    required this.servingLabel,
+    required this.amount,
+    required this.kcal,
+    required this.proteinG,
+    required this.carbsG,
+    required this.fatG,
+    this.source = FoodLogSource.catalog,
+    this.sourceRef,
+    required this.loggedAt,
+  });
+
+  /// [amount] servings of [food] eaten as [meal] at [now]. The single place
+  /// the diary's nutrition maths lives: `caloriesPer100g` is (as everywhere
+  /// else in the app) treated as the value of one `servingLabel` serving,
+  /// and [amount] multiplies it.
+  factory FoodLogEntry.fromFood(
+    FoodItem food,
+    double amount,
+    MealType meal,
+    DateTime now, {
+    FoodLogSource source = FoodLogSource.catalog,
+    String? sourceRef,
+  }) {
+    return FoodLogEntry(
+      id: '',
+      date: dateKey(now),
+      meal: meal,
+      foodName: food.name,
+      brand: food.brand,
+      servingLabel: food.servingLabel,
+      amount: amount,
+      kcal: (food.caloriesPer100g * amount).round(),
+      proteinG: food.proteinG * amount,
+      carbsG: food.carbsG * amount,
+      fatG: food.fatG * amount,
+      source: source,
+      sourceRef: sourceRef,
+      loggedAt: now.toUtc(),
+    );
+  }
+
+  /// UUID; empty until the entry has been saved.
+  final String id;
+
+  /// Local day, `yyyy-MM-dd`.
+  final String date;
+  final MealType meal;
+  final String foodName;
+  final String brand;
+  final String servingLabel;
+
+  /// Multiplier of [servingLabel].
+  final double amount;
+
+  /// Totals for [amount] servings.
+  final int kcal;
+  final double proteinG;
+  final double carbsG;
+  final double fatG;
+  final FoodLogSource source;
+
+  /// Barcode or custom food id, depending on [source].
+  final String? sourceRef;
+
+  /// When it was added (UTC); orders entries within a day.
+  final DateTime loggedAt;
+
+  /// One serving's worth as a [FoodItem], so the food detail screen's
+  /// serving picker can edit this entry.
+  FoodItem get asServingFood => FoodItem(
+        name: foodName,
+        brand: brand,
+        caloriesPer100g: (kcal / amount).round(),
+        proteinG: proteinG / amount,
+        carbsG: carbsG / amount,
+        fatG: fatG / amount,
+        servingLabel: servingLabel,
+      );
+
+  /// This entry with [newAmount] servings; kcal and macros scale by
+  /// `newAmount / amount`, mirroring `FoodLogDao.updateAmount`.
+  FoodLogEntry withAmount(double newAmount) {
+    final factor = newAmount / amount;
+    return copyWith(
+      amount: newAmount,
+      kcal: (kcal * factor).round(),
+      proteinG: proteinG * factor,
+      carbsG: carbsG * factor,
+      fatG: fatG * factor,
+    );
+  }
+
+  FoodLogEntry copyWith({
+    String? id,
+    MealType? meal,
+    double? amount,
+    int? kcal,
+    double? proteinG,
+    double? carbsG,
+    double? fatG,
+  }) {
+    return FoodLogEntry(
+      id: id ?? this.id,
+      date: date,
+      meal: meal ?? this.meal,
+      foodName: foodName,
+      brand: brand,
+      servingLabel: servingLabel,
+      amount: amount ?? this.amount,
+      kcal: kcal ?? this.kcal,
+      proteinG: proteinG ?? this.proteinG,
+      carbsG: carbsG ?? this.carbsG,
+      fatG: fatG ?? this.fatG,
+      source: source,
+      sourceRef: sourceRef,
+      loggedAt: loggedAt,
+    );
+  }
 }

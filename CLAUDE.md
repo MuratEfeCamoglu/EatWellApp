@@ -3,67 +3,22 @@
 Türk mutfağını tanıyan Flutter kalori ve beslenme takip uygulaması (Android + iOS).
 Dart paketi: `denge` (`import 'package:denge/...'`).
 
-Bu dosyanın asıl konusu **yerel veritabanı geçişi**: kullanıcının günlük kayıtları, su ve kilo
-geçmişi şu an bellekte duruyor ve uygulama kapanınca kayboluyor. Hedef, bunları cihazdaki bir
-SQLite veritabanında kalıcı hale getirmek. Tasarım ileride bulut senkronizasyonu eklenebilecek
-şekilde yapılır, ama bu dosyadaki işlerin hiçbiri internet veya sunucu gerektirmez.
+Kullanıcının günlük kayıtları, su ve kilo geçmişi ile kendi yiyecekleri cihazdaki SQLite
+veritabanında (`drift`) saklanır; uygulama her zaman buradan okur. Kullanıcı hesap açıp bulut
+rızası verirse veriler Supabase'e yedeklenir (§13). Rıza yoksa hiçbir veri cihazdan çıkmaz.
 
 ---
-
-## 1. Teknoloji yığını
-
-| Alan | Kullanılan |
-|---|---|
-| Dil / framework | Dart `^3.9.2`, Flutter stable, Material 3 |
-| Durum yönetimi | `provider` + tekil `AppState` (`ChangeNotifier`, `AppState.instance`) |
-| Basit ayarlar / profil | `shared_preferences` (değişmiyor) |
-| **Kullanıcı kayıtları (yeni)** | **SQLite + `drift`** |
-| Grafik | `fl_chart` |
-| Barkod / kamera | `mobile_scanner`, `image_picker` |
-| Görüntü tanıma | `google_mlkit_image_labeling` (cihaz üstü) |
-| Ağ | `http` → Open Food Facts API |
-| Test | `flutter_test`, `package:http/testing.dart` (`MockClient`) |
-| Lint | `flutter_lints` (`analysis_options.yaml`) |
 
 ## 2. Komutlar
 
 | İş | Komut |
 |---|---|
-| Kurulum | `flutter pub get` |
-| Çalıştır | `flutter run` |
-| Statik analiz | `flutter analyze` |
-| Testler | `flutter test` |
-| Tek test | `flutter test test/data/db/food_log_dao_test.dart` |
 | Drift kod üretimi | `dart run build_runner build --delete-conflicting-outputs` |
 | Kod üretimi (izleme) | `dart run build_runner watch --delete-conflicting-outputs` |
 | Şema dökümü (migration testi için) | `dart run drift_dev make-migrations` |
 
 Barkod ve fotoğraf özellikleri kamera kullanır, bu yüzden gerçek cihazda denenmeli.
 Ortamda `flutter` yoksa komutu çalıştırmış gibi davranma, çalıştırılamadığını açıkça raporla.
-
----
-
-## 3. Mevcut durum (geçişten önce)
-
-Kaynak: `lib/data/app_state.dart`, `lib/data/models.dart`.
-
-| Veri | Şu an nerede | Sorun |
-|---|---|---|
-| Profil, hedefler, ayarlar, alerjiler, KVKK onayı | `shared_preferences` | Sorun yok, olduğu gibi kalacak |
-| Favori tarifler | `shared_preferences` (başlık listesi) | Başlığa bağlı, ama şimdilik kalabilir |
-| Öğünler (`todaysMeals`) | **Bellek** | Uygulama kapanınca siliniyor. Öğün başına yalnızca toplam kalori ve virgülle birleştirilmiş ad metni var, yiyecekler tek tek tutulmuyor, bu yüzden silinemiyor veya düzenlenemiyor |
-| Makro toplamları (`proteinConsumedG` vb.) | **Bellek** | Kayıtlardan türetilmesi gerekirken ayrı sayaç olarak tutuluyor |
-| Su (`waterGlasses`) | **Bellek** | Tarih yok, gün değişince sıfırlanmıyor, kapanınca siliniyor |
-| Kilo geçmişi (`weightHistory`) | **Bellek** | Her açılışta son kilodan tek nokta oluşturuluyor |
-| Seri (`streakDays`) | `shared_preferences` | Hep 0, hiçbir yerde hesaplanmıyor |
-
-Bu verileri kullanan yerler:
-- `addFoodToMeal`: `search_screen.dart`, `food_detail_screen.dart`, `recipe_detail_screen.dart`
-- `todaysMeals`: `home_screen.dart`, `diary_screen.dart`
-- `waterGlasses` / `setWaterGlasses`: `home_screen.dart`, `progress_screen.dart`, `profile_screen.dart`
-- `weightHistory` / `logWeight`: `progress_screen.dart`, `profile_screen.dart`
-- `streakDays`: `home_screen.dart`, `progress_screen.dart`, `profile_screen.dart`
-- `diary_screen.dart` tarihler arasında gezebiliyor ama bugün dışındaki her gün için boş gösteriyor (`showEmpty = !isToday || ...`).
 
 ---
 
@@ -77,10 +32,12 @@ Bu verileri kullanan yerler:
    ```
    - **DAO** (`lib/data/db/daos/`): SQL sorguları. Drift tiplerini döner.
    - **Repository** (`lib/data/repositories/`): Drift satırlarını uygulama modellerine çevirir,
-     UUID ve zaman damgası üretir. İleride bulut senkronizasyonu buraya eklenecek.
+     UUID ve zaman damgası üretir.
+   - **Senkron** (`lib/data/sync/`, `SyncDao`): Repository'lerin yanında, ayrı çalışır; buluta
+     giden ve gelen satırları DAO seviyesinde okur ve yazar (§13.4).
    - **AppState:** Ekranlara veriyi sunar, repository'yi çağırır, `notifyListeners()` yapar.
-3. **Buluta hazır tasarım:** Her kullanıcı tablosu şu ortak sütunları taşır (bkz. §5.1). Bu sütunlar
-   bugün kullanılmasa bile baştan eklenir, böylece ileride senkronizasyon eklemek için şema değişmez.
+3. **Senkron sütunları:** Her kullanıcı tablosu §5.1'deki ortak sütunları taşır; bulut senkronu
+   bunlara dayanır.
 4. **Türetilen değerler saklanmaz:** Günlük kalori ve makro toplamları, seri ve rozetler her zaman
    kayıtlardan hesaplanır. Ayrı bir sayaç tutulmaz.
 5. **Kopya, referans değil:** Günlüğe eklenen yiyeceğin adı, porsiyonu, kalori ve makroları kayıt
@@ -89,8 +46,8 @@ Bu verileri kullanan yerler:
    olarak tutulur (`date` sütunu). Kesin zaman bilgisi ise UTC milisaniye olarak tutulur.
    Gece 23:30'da eklenen yemek o güne ait olur.
 7. **Silme:** Kayıtlar fiziksel olarak silinmez, `deleted_at` doldurulur (yumuşak silme). Tüm
-   okuma sorguları `deleted_at IS NULL` filtresi uygular. Bunun sebebi, ileride silme işleminin
-   de diğer cihazlara senkronlanabilmesi.
+   okuma sorguları `deleted_at IS NULL` filtresi uygular. Böylece silme işlemi de diğer cihazlara
+   senkronlanır. İstisnalar: "Tüm verilerimi sil" ve 30 günden eski silinmiş satırların temizliği.
 
 ---
 
@@ -104,247 +61,47 @@ Bu verileri kullanan yerler:
 | `created_at` | INTEGER | Oluşturulma zamanı, UTC milisaniye |
 | `updated_at` | INTEGER | Son değişiklik, UTC milisaniye. Her güncellemede yenilenir |
 | `deleted_at` | INTEGER, null olabilir | Doluysa kayıt silinmiş sayılır |
-| `synced_at` | INTEGER, null olabilir | Şimdilik hep `null`. Bulut eklenince kullanılacak |
+| `synced_at` | INTEGER, null olabilir | Buluta gönderilen sürümün `updated_at` değeri; `null` veya `updated_at`'ten küçükse satır gönderilmeyi bekliyor |
+| `server_updated_at` | INTEGER, null olabilir | Sunucunun zaman damgası (şema v2); çekme imleci buna dayanır |
 
 Bu sütunlar Drift'te ortak bir `mixin` ile tanımlanır (`SyncColumns`), her tabloda tekrar yazılmaz.
 
-### 5.2 `food_log_entries`: Günlüğe eklenen her yiyecek
+### 5.2 Tablolar
 
-| Sütun | Tip | Açıklama |
-|---|---|---|
-| *ortak sütunlar* | | §5.1 |
-| `date` | TEXT | `yyyy-MM-dd`, yerel gün |
-| `meal` | TEXT | `breakfast` / `lunch` / `dinner` / `snack` (`MealType.name`) |
-| `food_name` | TEXT | Kopya |
-| `brand` | TEXT | Kopya, boş olabilir |
-| `serving_label` | TEXT | Örn. `1 porsiyon (200 g)` |
-| `amount` | REAL | Porsiyon çarpanı (0.5 – 10) |
-| `kcal` | INTEGER | Kayıt anındaki toplam kalori (`caloriesPer100g * amount`, yuvarlanmış) |
-| `protein_g`, `carbs_g`, `fat_g` | REAL | Kayıt anındaki toplam (`* amount` uygulanmış) |
-| `source` | TEXT | `catalog` / `recipe` / `barcode` / `photo` / `custom` |
-| `source_ref` | TEXT, null olabilir | Barkod numarası veya `custom_foods.id` |
-| `logged_at` | INTEGER | Eklenme zamanı, UTC ms (liste sıralaması için) |
+Şema `lib/data/db/tables.dart` içinde (`food_log_entries`, `water_logs`, `weight_entries`,
+`custom_foods`). Koddan anlaşılmayan kurallar:
 
-İndeks: `(date, meal)` ve `(date)`.
-
-> Not: Mevcut kodda `kcal` hesabı `food.caloriesPer100g * amount` şeklinde. Yani `amount`,
-> `servingLabel` ile tanımlanan porsiyonun katı ve `caloriesPer100g` aslında porsiyon başı değer
-> gibi kullanılıyor. Geçişte bu hesap **olduğu gibi** korunur, düzeltmeye kalkışma.
-> Aynı mantık `FoodLogEntry.fromFood(...)` içinde tek bir yerde toplanır.
-
-### 5.3 `water_logs`: Günlük su
-
-| Sütun | Tip | Açıklama |
-|---|---|---|
-| *ortak sütunlar* | | §5.1 |
-| `date` | TEXT, **UNIQUE** | Günde tek satır |
-| `glasses` | INTEGER | 0 – `MockData.waterGlassesGoal` (10) |
-
-Bardağa dokunmak o günün satırını oluşturur veya günceller (upsert).
-
-### 5.4 `weight_entries`: Kilo geçmişi
-
-| Sütun | Tip | Açıklama |
-|---|---|---|
-| *ortak sütunlar* | | §5.1 |
-| `date` | TEXT | `yyyy-MM-dd` |
-| `kg` | REAL | 25 – 300 arası |
-| `measured_at` | INTEGER | UTC ms |
-
-Aynı gün birden fazla kilo girilirse hepsi saklanır. Grafik her gün için **son** ölçümü kullanır.
-Profildeki `user_weight` (shared_preferences) son ölçümle eşit tutulmaya devam eder.
-
-### 5.5 `custom_foods`: Kullanıcının kendi eklediği yiyecekler
-
-| Sütun | Tip | Açıklama |
-|---|---|---|
-| *ortak sütunlar* | | §5.1 |
-| `name` | TEXT | Zorunlu, en az 2 karakter |
-| `brand` | TEXT | Boş olabilir |
-| `serving_label` | TEXT | Örn. `1 porsiyon (150 g)` |
-| `kcal_per_serving` | INTEGER | |
-| `protein_g`, `carbs_g`, `fat_g` | REAL | Porsiyon başı |
-| `category` | TEXT | `FoodCategory.name` |
-| `barcode` | TEXT, null olabilir | Barkodla bulunamayan ürün kaydedilirse |
+- `kcal` hesabı `food.caloriesPer100g * amount`. Yani `amount`, `servingLabel` porsiyonunun katı
+  ve `caloriesPer100g` aslında porsiyon başı değer gibi kullanılıyor. Bu hesap **olduğu gibi**
+  korunur, düzeltmeye kalkışma. Tek yeri `FoodLogEntry.fromFood(...)`.
+- Su: günde tek satır (`date` UNIQUE), bardağa dokunmak upsert yapar.
+- Kilo: aynı gün birden fazla ölçüm saklanır, grafik her günün **son** ölçümünü kullanır.
+  Profildeki `user_weight` (shared_preferences) son ölçümle eşit tutulur.
 
 ### 5.6 Veritabanında **olmayacaklar**
 
 - Yiyecek kataloğu (`mock_data.dart`, `extra_foods.dart`, `more_foods.dart`) ve tarifler (`recipes.dart`): kodda kalır.
 - Profil, hedefler, tema, yazı boyutu, alerjiler, KVKK onayı: `shared_preferences` içinde kalır.
+  Bulut rızası varsa profil, hedefler, alerjiler ve sağlık rızası ayrıca `profiles` tablosuna
+  senkronlanır (§13.3); tema, yazı boyutu ve bildirim tercihleri cihazda kalır.
 - Günlük toplamlar, seri, rozetler: kayıtlardan hesaplanır, saklanmaz.
 
 ---
 
-## 6. Klasör yapısı (hedef)
+## 7. Yapılacaklar
 
-```
-lib/data/
-├── db/
-│   ├── app_database.dart        # @DriftDatabase, schemaVersion, MigrationStrategy
-│   ├── app_database.g.dart      # build_runner üretir; depoya commit edilir
-│   ├── tables.dart              # Tablo sınıfları + SyncColumns mixin
-│   ├── date_key.dart            # DateTime <-> 'yyyy-MM-dd' çevirileri
-│   └── daos/
-│       ├── food_log_dao.dart
-│       ├── water_dao.dart
-│       ├── weight_dao.dart
-│       └── custom_food_dao.dart
-├── repositories/
-│   ├── food_log_repository.dart
-│   ├── water_repository.dart
-│   ├── weight_repository.dart
-│   └── custom_food_repository.dart
-├── stats/
-│   ├── daily_summary.dart       # Bir günün kalori/makro toplamı (saf Dart)
-│   └── streak.dart              # Seri hesabı (saf Dart)
-└── ... (mevcut dosyalar)
+Aşama 0–6 (yerel veritabanı geçişi) tamamlandı; ayrıntılar git geçmişinde.
 
-test/data/
-├── db/                          # DAO testleri (bellek içi veritabanı)
-├── repositories/
-└── stats/
-```
-
-`app_database.g.dart` gibi üretilen dosyalar **commit edilir**. Böylece sadece `flutter pub get`
-yapan biri de projeyi derleyebilir. Tablo değişince `build_runner` yeniden çalıştırılıp güncel
-`.g.dart` dosyası da aynı commit'e eklenir.
-
----
-
-## 7. Yapılacaklar (aşama aşama)
-
-Her aşama kendi başına çalışır durumda bitmeli: `flutter analyze` temiz, `flutter test` yeşil,
-uygulama açılıyor. Bir aşama bitmeden sonrakine geçme.
-
-### Aşama 0: Altyapı
-
-- [ ] `pubspec.yaml` dosyasına ekle:
-  - `dependencies`: `drift`, `drift_flutter`, `path_provider`, `uuid`
-  - `dev_dependencies`: `drift_dev`, `build_runner`
-- [ ] `lib/data/db/tables.dart`: `SyncColumns` mixin'i ve §5'teki dört tablo.
-- [ ] `lib/data/db/app_database.dart`: `AppDatabase` sınıfı, `schemaVersion = 1`, iki constructor:
-  - `AppDatabase()`: gerçek dosya (`driftDatabase(name: 'denge')`)
-  - `AppDatabase.forTesting(QueryExecutor e)`: testler için (`NativeDatabase.memory()`)
-- [ ] `lib/data/db/date_key.dart`: `String dateKey(DateTime local)` ve `DateTime parseDateKey(String)`.
-- [ ] `build_runner` çalıştır, `.g.dart` dosyasını commit'le.
-- [ ] `main.dart`: `AppDatabase` oluştur ve `AppState`'e ver (`AppState.instance.attachDatabase(db)`
-      veya `load(db: ...)`). `AppState` veritabanı olmadan da çalışabilmeli (mevcut widget testleri bozulmasın).
-- [ ] **Test:** Bellek içi veritabanı açılıyor, dört tablo oluşuyor. `dateKey` için gece yarısı sınır testi.
-
-**Kabul:** Uygulama eskisi gibi açılıyor, davranış değişmedi, veritabanı dosyası oluştu.
-
-### Aşama 1: Günlük kayıtlarını kalıcı yap (en önemli aşama)
-
-- [ ] `FoodLogEntry` modeli (`lib/data/models.dart` veya ayrı dosya): §5.2'deki alanlar ve
-      `FoodLogEntry.fromFood(FoodItem food, double amount, MealType meal, DateTime now, {source})`.
-- [ ] `FoodLogDao`:
-  - `insertEntry(...)`
-  - `Stream<List<...>> watchEntriesForDate(String date)` (silinmemiş, `logged_at` sıralı)
-  - `Future<List<...>> entriesForDate(String date)`
-  - `Future<Set<String>> datesWithEntries({String? from, String? to})` (seri için)
-- [ ] `FoodLogRepository`: UUID, `created_at`/`updated_at`/`logged_at` üretimi. Drift satırı ↔ `FoodLogEntry` çevrimi.
-- [ ] `lib/data/stats/daily_summary.dart`: `DailySummary.fromEntries(List<FoodLogEntry>)` →
-      toplam kcal, protein, karb, yağ ve öğün başına kcal ile yiyecek listesi.
-- [ ] `AppState` değişiklikleri:
-  - `addFoodToMeal(type, food, amount)` imzası **aynı kalır** (3 ekran bunu çağırıyor), içi
-    repository'ye yazacak şekilde değişir. `source` için isteğe bağlı parametre eklenebilir.
-  - `todaysMeals`, `proteinConsumedG`, `carbsConsumedG`, `fatConsumedG`, `caloriesConsumedToday`
-    artık bugünün kayıtlarından **türetilen getter'lar** olur. Ekranlardaki kullanım bozulmasın diye
-    `todaysMeals` yine `List<MealEntry>` dönmeye devam eder (açıklama = yiyecek adları virgülle).
-  - `todayEntries` (bugünün `FoodLogEntry` listesi) eklenir. `load()` sırasında ve her yazmadan sonra güncellenir.
-  - Bugünün kayıtları `watchEntriesForDate` stream'i ile dinlenir. Gün değişirse (uygulama gece
-    yarısını geçerek açık kalırsa) abonelik yeni güne taşınır. `now` dışarıdan verilebilir olmalı.
-- [ ] `diary_screen.dart`: Seçili gün için `watchEntriesForDate` stream'ini `StreamBuilder` ile
-      kullan. Geçmiş günler artık boş değil, o günün kayıtları görünür. `showEmpty = !isToday` mantığını kaldır.
-- [ ] `home_screen.dart`: Değişiklik gerekmemeli (getter'lar aynı). Kontrol et.
-- [ ] **Testler:**
-  - DAO: ekle → oku, başka güne ait kayıt gelmez, silinmiş kayıt gelmez.
-  - `DailySummary`: boş gün, tek kayıt, çok kayıt toplamları.
-  - `AppState`: `addFoodToMeal` sonrası `caloriesConsumedToday` artar. `AppState` yeniden yüklenince kayıt hâlâ orada.
-
-**Kabul:**
-- Yiyecek ekle → uygulamayı tamamen kapat → aç → kayıt ve kalori yerinde.
-- Günlükte dünkü güne geçince dünkü kayıtlar görünüyor.
-- Ana sayfadaki kalori halkası ve makro çubukları eskisi gibi çalışıyor.
-
-### Aşama 2: Kayıt silme ve düzenleme
-
-- [ ] `FoodLogDao`: `softDelete(id, now)`, `restore(id, now)` (geri al için), `updateAmount(id, amount, now)`.
-      Miktar değişince `kcal` ve makrolar orantılı olarak yeniden hesaplanır.
-- [ ] Günlük ekranında öğün kartı, içindeki yiyecekleri **ayrı satırlar** olarak listeler
-      (ad, porsiyon, kcal).
-- [ ] Satırı sola kaydır → sil → SnackBar'da **"Geri al"** (4 sn). Geri al `restore` çağırır.
-- [ ] Satıra dokun → porsiyon düzenleme (food detail ekranındaki porsiyon seçiciyle aynı adımlar),
-      öğünü değiştirme seçeneği.
-- [ ] **Testler:** silinen kayıt toplamlara girmez, geri alınca geri gelir, miktar güncellemesi makroları doğru ölçekler.
-
-**Kabul:** Yanlış eklenen bir yiyecek silinebiliyor ve kalori anında düşüyor. Geri al çalışıyor.
-
-### Aşama 3: Su ve kilo
-
-- [ ] `WaterDao` / `WaterRepository`: `watchGlassesForDate(date)`, `setGlasses(date, glasses, now)` (upsert).
-- [ ] `AppState.waterGlasses` bugünün değerinden türetilir. `setWaterGlasses` repository'ye yazar.
-      Gece yarısından sonra yeni gün 0 bardakla başlar.
-- [ ] `WeightDao` / `WeightRepository`: `addEntry(kg, now)`, `watchHistory({from})`, `latest()`.
-- [ ] `AppState.weightHistory` veritabanından gelir. `logWeight` hem veritabanına hem `user_weight` tercihine yazar.
-- [ ] `completeSetup()`: kurulumdaki kilo ilk `weight_entries` kaydı olarak eklenir.
-- [ ] **Eski kullanıcıların geçişi:** `load()` sırasında `setupComplete == true` ve `weight_entries`
-      boşsa, `user_weight` değerini o günün tarihiyle tek kayıt olarak ekle. Bu işlem sadece bir kez çalışmalı.
-- [ ] `progress_screen.dart`: haftalık/aylık grafik gerçek geçmişten çizilir. Her gün için son ölçüm alınır.
-- [ ] **Testler:** su upsert (aynı gün iki kez yazınca tek satır), gün değişimi, kilo geçmişi
-      sıralaması, eski kullanıcı geçişinin tek sefer çalışması.
-
-**Kabul:** Su ve kilo uygulama yeniden açılınca korunuyor. Kilo grafiği birden fazla nokta gösteriyor.
-
-### Aşama 4: Seri ve rozetler
-
-- [ ] `lib/data/stats/streak.dart`:
-      `int currentStreak(Set<String> loggedDates, DateTime now)`. Kural: Bugünden geriye doğru
-      **en az bir yiyecek kaydı olan** ardışık günler sayılır. Bugün henüz kayıt yoksa seri
-      dünden itibaren sayılır (bugün kayıt girilmediği için seri bozulmuş sayılmaz).
-- [ ] `AppState` içinde `streakDays` bu fonksiyondan türetilir. `UserProfile.streakDays` ve
-      `user_streak` tercihi artık kullanılmaz (okumayı kaldır, alanı model uyumluluğu için bırakabilirsin).
-- [ ] Rozetler (`profile_screen.dart`) türetilmiş değerlere bağlanır:
-  - *İlk adım:* en az 1 günlük kaydı var
-  - *7 gün seri:* `streakDays >= 7`
-  - *Su ustası:* bugün su hedefi tamam
-  - *Protein avcısı:* bugün protein hedefi tamam
-- [ ] **Testler (sabit `now` ile):** kayıt yok → 0, sadece bugün → 1, dün + bugün → 2,
-      dün var bugün yok → 1, arada boş gün → seri orada kırılır, ay/yıl geçişi.
-
-**Kabul:** Art arda günlerde kayıt girilince seri artıyor, bir gün atlanınca sıfırlanıyor.
-
-### Aşama 5: Kendi yiyeceğini ekle
-
-- [ ] `CustomFoodDao` / `CustomFoodRepository`: ekle, güncelle, sil (yumuşak), `watchAll()`.
-- [ ] Yeni ekran `lib/screens/food/custom_food_screen.dart` (rota `AppRoutes`'a eklenir):
-      ad, marka, porsiyon etiketi, kcal, protein, karb, yağ, kategori. Doğrulama: ad zorunlu,
-      sayılar 0 veya pozitif, kcal ≤ 5000.
-- [ ] `search_screen.dart`: "Yiyeceği kendin ekle" butonundaki "Bu özellik yakında" SnackBar'ı
-      kaldırılır ve buton yeni ekranı açar (arama metni ad alanına önceden doldurulur).
-- [ ] Arama sonuçlarında kullanıcının kendi yiyecekleri katalogla birlikte, **en üstte** listelenir.
-- [ ] Barkod bulunamazsa "Bu ürünü kendin ekle" seçeneği barkod numarasıyla birlikte aynı ekranı açar.
-      Sonraki taramada bu barkod önce `custom_foods` içinde aranır.
-- [ ] **Testler:** doğrulama kuralları, aramada kendi yiyeceğin çıkması, barkod eşleşmesi.
-
-**Kabul:** Katalogda olmayan bir yiyecek eklenip günlüğe kaydedilebiliyor ve sonraki aramalarda çıkıyor.
-
-### Aşama 6: Veri yönetimi ve KVKK
-
-- [ ] Ayarlar ekranına **"Tüm verilerimi sil"**: onay diyaloğundan sonra veritabanındaki bütün
-      tablolar **fiziksel olarak** boşaltılır ve `shared_preferences` temizlenir. Ardından
-      karşılama ekranına dönülür. (Yumuşak silme burada uygulanmaz, kullanıcı gerçekten silinmesini istiyor.)
-- [ ] Eski kayıt temizliği: `deleted_at` dolu ve 30 günden eski satırlar uygulama açılışında
-      kalıcı olarak silinir. (Bulut senkronu eklendiğinde bu süre `synced_at` kontrolüne bağlanacak.)
 - [ ] (İsteğe bağlı) "Verilerimi dışa aktar": günlük, su ve kiloyu JSON dosyası olarak paylaş.
-- [ ] **Testler:** silme sonrası tüm tablolar boş, `AppState` ilk açılış durumunda.
+      Paylaşım için yeni bir paket (`share_plus`) gerekiyor.
 
 ---
 
 ## 8. Şema değişikliği (migration) kuralları
 
-- Yayınlanmış bir şemayı **asla elle değiştirme**. Her değişiklikte `schemaVersion` bir artırılır
-  ve `MigrationStrategy.onUpgrade` içine o sürüm için adım eklenir (`from < 2` gibi).
+- Yayınlanmış bir şemayı **asla elle değiştirme**. Her değişiklikte `schemaVersion` bir artırılır,
+  `dart run drift_dev make-migrations` çalıştırılır ve `onUpgrade: stepByStep(...)` içine yeni
+  adım eklenir (`from1To2` gibi; yardımcı `app_database.steps.dart` dosyasında üretilir).
 - Sadece ekleyici değişiklik tercih et: yeni tablo, yeni null olabilir sütun, yeni indeks.
   Sütun silme veya yeniden adlandırma gerekiyorsa önce plan yazıp onay al.
 - Her sürüm için `dart run drift_dev make-migrations` ile şema dökümü (`drift_schemas/`) alınır
@@ -374,7 +131,8 @@ uygulama açılıyor. Bir aşama bitmeden sonrakine geçme.
 - `lib/data/` altındaki her yeni saf fonksiyon için birim testi zorunlu: normal durum + en az 1 sınır durumu.
 - Tarih mantığı (gün değişimi, seri, ay sonu) her zaman sabit `DateTime` ile test edilir.
 - `SharedPreferences` testlerinde `SharedPreferences.setMockInitialValues({})` kullan.
-- Ağ çağrıları testte gerçek ağa çıkmaz, `MockClient` ile enjekte edilir.
+- Ağ çağrıları testte gerçek ağa çıkmaz: HTTP için `MockClient`, hesap ve bulut için
+  `test/helpers/` altındaki sahte `AuthService`, `SyncBackend` ve `ReminderScheduler`.
 - Test dosyaları `lib/` yapısını aynalar: `lib/data/stats/streak.dart` ↔ `test/data/stats/streak_test.dart`.
 
 ## 11. Çalışma kuralları
@@ -385,24 +143,173 @@ uygulama açılıyor. Bir aşama bitmeden sonrakine geçme.
   `test(stats): seri hesabı testleri`.
 - `build/`, `.dart_tool/`, `coverage/` commit edilmez. Drift'in `.g.dart` dosyaları commit edilir.
 - Davranış değişince `README.md` içindeki özellik listesi güncellenir.
-- Bu dosyada (§7) bir aşama bitince ilgili kutucuklar `[x]` yapılır.
+- Bu dosyada (§7, §13.6) bir aşama bitince ilgili kutucuklar `[x]` yapılır.
 
 ## 12. Tuzaklar
 
-- `AppState` tekildir (`AppState.instance`) ve `main()` içinde `await AppState.instance.load()` ile
-  yüklenir. Widget testlerinde de önce yüklenmelidir.
+- `AppState` tekildir (`AppState.instance`). `main()` önce `reminders`, `auth` ve `syncBackend`
+  nesnelerini bağlar, sonra `await AppState.instance.load(db: AppDatabase())` çağırır. Testlerde
+  `AppState.forTesting()` kullanılır ve önce yüklenir.
 - `addFoodToMeal` imzası 3 ekran tarafından kullanılıyor, imzayı değiştirirsen hepsini güncelle.
 - Tarif favorileri **başlığa** göre saklanıyor, tarif başlığını değiştirmek favoriyi kırar.
 - Su hedefi `MockData.waterGlassesGoal` (10 bardak × 250 ml = 2,5 L).
 - `foodImageSlug` ile `tool/fetch_food_images.py` aynı slug kuralını kullanır, birini değiştirirsen diğerini de değiştir.
 - Open Food Facts isteklerinde `User-Agent` başlığı zorunlu, kaldırma.
-- Kilo, alerji ve beslenme verileri KVKK'ya göre sağlık verisi sayılabilir. Bu aşamada hepsi
-  yalnızca cihazda kalır. Buluta göndermeden önce açık rıza metni güncellenmelidir.
+- Kilo, alerji ve beslenme verileri KVKK'ya göre sağlık verisi sayılabilir. Bulut rızası (§13.5)
+  verilmeden hiçbir veri cihazdan çıkmaz.
 
-## 13. Sonraki adım (bu dosyanın kapsamı dışında): bulut senkronizasyonu
+## 13. Bulut senkronizasyonu (Supabase)
 
-Yerel veritabanı bittikten sonra eklenecek. Tasarım şimdiden buna uygun:
-- Bulut sağlayıcı (Supabase önerildi) sadece `lib/data/backend/` altında import edilir.
-- `synced_at IS NULL OR updated_at > synced_at` olan satırlar gönderilecek kuyruğu oluşturur.
-- Çakışma kuralı: `updated_at` değeri büyük olan kazanır.
-- Uygulama her zaman yerel veritabanından okur, internet zorunlu değildir.
+Amaç: kullanıcı isterse hesap açar; günlük, su, kilo, kendi yiyecekleri ve profili buluta yedeklenir
+ve başka bir cihazda aynı hesapla açınca geri gelir. **Uygulama her zaman yerel veritabanından okur**;
+bulut yalnızca arka planda eşitlenen bir kopyadır. Hesap açmak isteğe bağlıdır, hesapsız kullanım
+bugünkü gibi tamamen yerel çalışmaya devam eder.
+
+### 13.1 Kararlar
+
+1. **Sağlayıcı:** Supabase (PostgreSQL + Auth + Row Level Security). Bölge **AB (Frankfurt,
+   `eu-central-1`)**. Paket: `supabase_flutter`.
+2. **Sınır:** `supabase_flutter` sadece `lib/data/backend/` altında import edilir. Senkron mantığı
+   `lib/data/sync/` altında saf Dart'tır ve sunucuyla bir arayüz (`SyncBackend`) üzerinden konuşur;
+   testler sahte bir backend kullanır. Ekranlar Supabase'i hiç görmez (§9 ile aynı kural).
+3. **Anahtarlar:** `SUPABASE_URL` ve `SUPABASE_PUBLISHABLE_KEY` koda yazılmaz, `--dart-define` ile verilir
+   (`flutter run --dart-define-from-file=env/dev.json`; `env/` git'e girmez, `env/example.json` girer).
+   Publishable key istemcide durabilir, güvenliği RLS sağlar. **Secret key (`sb_secret_...`, eski adıyla `service_role`) asla uygulamaya
+   veya depoya girmez.**
+4. **Zaman:** Sunucudaki sütunlar yerelle aynı biçimde tutulur (UTC milisaniye, `bigint`), dönüşüm
+   gerekmez. Telefon saatleri yanlış olabileceği için "neyi henüz çekmedim" sorusu **sunucunun**
+   koyduğu `server_updated_at` ile cevaplanır; istemcinin `updated_at` değeri yalnızca çakışma
+   kuralında kullanılır.
+5. **Çakışma kuralı:** Son yazan kazanır (`updated_at` büyük olan). Sunucuda bir trigger, gelen
+   satırın `updated_at` değeri mevcuttan küçükse güncellemeyi yok sayar; böylece eski bir cihaz
+   yeni veriyi ezemez.
+6. **Hesap ve cihaz:** Bir cihazda aynı anda tek hesap. Hesapsız kullanırken biriken kayıtlar ilk
+   girişte (rıza verilince) o hesaba yüklenir. Hedef (B6): oturum kapatılırken önce bekleyen her
+   şey gönderilir, sonra yerel veritabanı temizlenir. **Şu an** çıkış yalnızca oturumu kapatır,
+   yerel kayıtlar telefonda kalır.
+7. **Gönderilmeyenler:** Yemek kataloğu ve tarifler (kodda), tema / yazı boyutu / hareket azaltma,
+   bildirim tercihleri (cihaza özgü), tarif favorileri (şimdilik).
+
+### 13.2 Sunucu şeması
+
+Şemanın kendisi `supabase/migrations/*.sql` içinde; her değişiklik yeni bir migration dosyasıdır,
+sunucu şeması elle değiştirilmez. Docker olmadığı için uygulama:
+`npx supabase db query --linked --project-ref <ref> -f <migration>.sql`, ardından
+`npx supabase migration repair <sürüm> --status applied --linked --project-ref <ref>`.
+Her migration'dan sonra `supabase/tests/rls_test.sql` (`ALL PASSED` dönmeli; tek transaction,
+`ROLLBACK` ile biter, iz bırakmaz) ve `npx supabase db advisors --type security` çalıştırılır.
+Advisors'ın `delete_my_account` için verdiği "SECURITY DEFINER" uyarısı bilinçlidir.
+
+Koddan anlaşılmayan kurallar:
+- İstemcinin fiziksel silme yetkisi yok (DELETE izni ve politikası yok); silme her zaman
+  `deleted_at` ile, fiziksel silme yalnızca `delete_my_account()` içinde.
+- Su `(user_id, date)` üzerinde tekildir ve `upsert_water` RPC'siyle yazılır; dönen satırın `id`'si
+  yerelde benimsenir (iki cihaz aynı gün için farklı `id` üretebilir).
+- `server_updated_at`'i yalnızca sunucudaki trigger yazar; eski `updated_at` taşıyan güncelleme yok
+  sayılır.
+
+### 13.3 Durum
+
+Aşama B1–B3 tamamlandı (ayrıntılar git geçmişinde). Alınan ve korunması gereken kararlar:
+- Yerel şema v2: `server_updated_at` sütunu ve `sync_state (entity, pulled_until)`; geçiş testleri
+  `test/drift/` altında. Oturum açıkken 30 günlük temizlik yalnızca buluta ulaşmış silmeleri
+  (`synced_at >= deleted_at`) kalıcı siler.
+- Bulut rızası, sağlık verisi rızasından **ayrı ve isteğe bağlıdır** (`AppState.kCloudConsentVersion`,
+  `CloudConsentScreen`); reddetmek uygulamanın hiçbir yerini kapatmaz.
+- E-posta doğrulama ve şifre sıfırlama `com.denge.denge://login-callback` deep link'iyle uygulamayı
+  açar; bu adres Supabase panelinde Authentication → URL Configuration → Redirect URLs listesinde
+  olmalı.
+- Profil senkronu `decideProfileSync` (son yazan kazanır, hedefsiz bulut profili gerçek profili
+  ezmez); kilo geçmişinin kendisi B5'te gelir.
+
+### 13.4 Senkron algoritması (`lib/data/sync/sync_engine.dart`)
+
+Bir senkron turu sırayla: **profil → gönder → çek**. Aynı anda tek tur çalışır (kilit).
+
+- **Gönder:** Her tablo için `synced_at IS NULL OR updated_at > synced_at` olan satırlar, en fazla
+  100'lük gruplar halinde `upsert` edilir (su için `upsert_water`). Onaylanan her satıra yerelde
+  `synced_at = gönderilen updated_at` ve `server_updated_at` yazılır; satır bu arada değiştiyse
+  işaretlenmez (B4 kararı). Su RPC'si farklı bir `id` dönerse yerel satır o `id` ile değiştirilir
+  (aynı gün için tek satır kuralı korunur).
+- **Çek:** `server_updated_at > pulled_until` olan satırlar `server_updated_at` sırasıyla, 500'lük
+  sayfalarla alınır. Her satır için:
+  - Yerelde yoksa eklenir.
+  - Yerelde varsa ve gelen `updated_at` ≥ yerel `updated_at` ise üzerine yazılır; yerel satır daha
+    yeniyse dokunulmaz (bir sonraki gönderimde o kazanır).
+  - `deleted_at` dolu gelen satır yerelde de yumuşak silinir.
+  - Yazılan her satırda `synced_at = updated_at` olur, böylece geri gönderilmez.
+  - Sayfa bitince `pulled_until` güncellenir. Hepsi tek `transaction` içinde (§9).
+- **Ne zaman:** uygulama açılınca, öne gelince, her yazmadan 5 sn sonra (art arda yazmalar
+  birleşir) ve Ayarlar → Bulut yedekleme'deki **"Şimdi eşitle"** ile. Ağ hatasında artan
+  aralıklarla (30 sn, 1 dk, 2 dk … en fazla 15 dk) tekrar denenir.
+- **Durum:** `AppState.syncStatus` (`off / pending / syncing / upToDate / error`; ekranda
+  Kapalı / Açık / Eşitleniyor… / Güncel / Eşitlenemedi) ve `lastSyncedAt`.
+- Repository'ler değişmez: senkron, `SyncDao`'daki ayrı sorguları kullanır (`dirtyRows`,
+  `markSynced`, `adoptServerWater`; çekme için B5'te `applyRemote`).
+
+### 13.5 KVKK
+
+- Sağlık verisi (kilo, alerji, beslenme) **yurt dışına (AB) aktarılacağı** için ayrı ve açık rıza
+  gerekir: `CloudConsentScreen`, sürümü `AppState.kCloudConsentVersion` (sağlık verisi rızasının
+  `kConsentVersion`'ından ayrı; metin önemli ölçüde değişirse bu sürüm artırılır). Rıza verilmeden
+  **hiçbir veri gönderilmez**; kullanıcı hesap açsa bile reddederse uygulama yerel çalışmaya devam eder.
+- Rıza Ayarlar → Bulut yedekleme'den geri alınabilir; senkron durur. Buluttaki verinin silinmesi
+  hesap silmeyle gelir (B6).
+- "Tüm verilerimi sil", oturum açıksa önce `delete_my_account()` çağırır, sonra yereli siler.
+  Sunucu silmesi başarısız olursa yerel silme yapılmaz ve kullanıcıya söylenir.
+- Gizlilik metninde: hangi veriler, nerede (Supabase, AB), ne kadar süre, nasıl silinir.
+
+### 13.6 Aşamalar
+
+Her aşama kendi başına çalışır durumda biter (§7'deki kurallarla aynı): `flutter analyze` temiz,
+`flutter test` yeşil, hesapsız kullanım bozulmamış.
+
+#### Aşama B4: Gönderme (yedekleme)
+
+- [x] `SyncBackend` arayüzü, `SupabaseSyncBackend` uygulaması, `SyncEngine.push()`.
+      Kararlar: `synced_at`'e gönderim anı değil **gönderilen `updated_at`** yazılır ve yalnızca satır
+      hâlâ o değerdeyse (`SyncDao.markSynced`); gönderim sırasında yapılan düzenleme kaybolmaz.
+      Sunucunun reddettiği satır (`SyncRejected`) tek başına atlanır, diğerlerini kilitlemez.
+      Tetikleme, kullanıcı tablolarının değişiklik akışından gelir (yeni yazma yolları da kapsanır);
+      gönderilecek satır yoksa ağa çıkılmaz. `row_mappers_test` sütun adlarını migration
+      dosyalarıyla karşılaştırır.
+- [x] Tetikleyiciler (§13.4) ve Ayarlar'da durum + "Şimdi eşitle".
+- [x] İlk girişte hesapsız biriken kayıtların yüklenmesi.
+- [x] **Testler (sahte backend, sabit saat):** kirli satırlar gidiyor ve `synced_at` doluyor; ağ
+      hatasında hiçbir satır "gönderildi" sayılmıyor; 250 satır 3 grup halinde gidiyor; su `id`
+      değişimi yerelde uygulanıyor.
+
+**Kabul:** İnternet kapalıyken yiyecek ekle → interneti aç → kayıt Supabase tablosunda görünüyor.
+
+#### Aşama B5: Çekme ve çoklu cihaz
+
+- [ ] `SyncEngine.pull()`, `sync_state`, sayfalama.
+- [ ] Silmelerin yayılması; 30 gün temizliğinin `synced_at` koşulu.
+- [ ] **Testler:** yeni satır ekleniyor; eski `updated_at` yerel yeni veriyi ezmiyor; silme
+      yayılıyor; yarıda kesilen çekme bir sonraki turda kaldığı yerden devam ediyor; aynı gün iki
+      cihazdan su tek satıra iniyor.
+
+**Kabul:** İki telefonda aynı hesap: birinde eklenen, düzenlenen ve silinen yiyecek diğerinde de
+aynı oluyor; su ve kilo da eşitleniyor.
+
+#### Aşama B6: Oturum kapatma ve hesap silme
+
+- [ ] Çıkış: önce gönder, sonra yereli temizle; gönderilemeyen veri varsa uyar.
+- [ ] "Tüm verilerimi sil" ve "Hesabımı sil": `delete_my_account()` + yerel silme (§13.5).
+- [ ] README ve gizlilik metni güncellenir.
+- [ ] **Testler:** gönderilmemiş veri varken çıkış uyarısı; sunucu silmesi başarısızsa yerel veri
+      duruyor.
+
+**Kabul:** Hesap silinince Supabase'te o kullanıcıya ait satır kalmıyor ve uygulama karşılama
+ekranına dönüyor.
+
+### 13.7 Tuzaklar
+
+- Yeni bir tablo eklerken RLS'yi açmayı unutmak, tüm kullanıcıların verisini açığa çıkarır. Her
+  migration'da RLS testi şart.
+- `server_updated_at`'i istemci yazamaz; çekme imleci istemcinin saatine **asla** dayanmaz.
+- `date` sütunları cihazın yerel gününe göre (§4.6). Kullanıcı saat dilimi değiştirince geçmiş
+  günler kaymaz; bu bilinçli bir karardır.
+- Senkron turu "Tüm verilerimi sil" veya çıkış sırasında çalışmamalı: `deleteAllData` ve `signOut`
+  önce zamanlayıcıyı iptal eder, sonra süren turun bitmesini bekler.
+- Supabase istemcisi testlerde gerçek ağa çıkmaz (§10); senkron testleri sahte `SyncBackend` ile.

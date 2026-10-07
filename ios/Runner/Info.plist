@@ -47,5 +47,14 @@
 	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>Denge, barkod tarayarak ürün eklemek için kameraya erişim ister.</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.denge.denge</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

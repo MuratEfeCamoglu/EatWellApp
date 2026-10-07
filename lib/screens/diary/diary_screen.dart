@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../data/app_state.dart';
 import '../../data/models.dart';
+import '../../data/stats/daily_summary.dart';
 import '../../router.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_theme.dart';
@@ -12,20 +13,15 @@ import '../../widgets/section_card.dart';
 /// via the shared theme) and project/DiaryEmpty.dc.html.
 ///
 /// Local state holds the selected day (a Monday-start week strip, plus a
-/// native date picker behind the calendar button) and the list of today's
-/// logged meals, seeded from [MockData.todaysMeals]. The mock data set only
-/// models "today" — so selecting any other day naturally reaches the empty
-/// state from DiaryEmpty.dc.html, which doubles as a way to demo it without
-/// a forced "clear" debug action.
+/// native date picker behind the calendar button). Today's entries come
+/// straight from [AppState.todayEntries]; any other day is read live from
+/// the database via [AppState.watchEntriesForDate]. A past day with nothing
+/// logged shows the empty state from DiaryEmpty.dc.html.
 ///
 /// Per-meal calorie goals (breakfast/lunch/dinner/snack) aren't part of the
 /// shared mock-data model, so a small local split of the overall
 /// [UserProfile.calorieGoal] is used here purely for display, matching the
 /// exact numbers shown in Diary.dc.html (460/650/550/190, summing to 1850).
-/// The design's per-meal food-item breakdown (with individual icons/kcal
-/// per ingredient) isn't in the shared [MealEntry] model either, so each
-/// meal card instead shows its aggregate description text — the same
-/// simplification Home.dc.html's summary already uses.
 class DiaryScreen extends StatefulWidget {
   const DiaryScreen({super.key});
 
@@ -34,7 +30,7 @@ class DiaryScreen extends StatefulWidget {
 }
 
 class _DiaryScreenState extends State<DiaryScreen> {
-  late DateTime _selectedDate = _dateOnly(DateTime.now());
+  late DateTime _selectedDate = _dateOnly(context.read<AppState>().clock());
 
   static const _weekdayShort = ['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz'];
   static const _monthNames = [
@@ -47,6 +43,12 @@ class _DiaryScreenState extends State<DiaryScreen> {
     MealType.dinner: Icons.nightlight_rounded,
     MealType.snack: Icons.cookie_rounded,
   };
+  static const _mealTitles = {
+    MealType.breakfast: 'Kahvaltı',
+    MealType.lunch: 'Öğle yemeği',
+    MealType.dinner: 'Akşam yemeği',
+    MealType.snack: 'Ara öğün',
+  };
   static const _mealGoals = {
     MealType.breakfast: 460,
     MealType.lunch: 650,
@@ -55,6 +57,70 @@ class _DiaryScreenState extends State<DiaryScreen> {
   };
 
   static DateTime _dateOnly(DateTime d) => DateTime(d.year, d.month, d.day);
+
+  /// Cached per selected day so rebuilds don't resubscribe (and re-query)
+  /// on every frame.
+  DateTime? _streamDay;
+  Stream<List<FoodLogEntry>>? _dayStream;
+
+  /// Rows swiped away but not yet gone from the data source; hidden right
+  /// away so the [Dismissible] leaves the tree before the write finishes.
+  final Set<String> _hiddenIds = {};
+
+  static String _fmtAmount(double x) {
+    final rounded = (x * 10).round() / 10;
+    if (rounded == rounded.roundToDouble()) return rounded.toInt().toString();
+    return rounded.toStringAsFixed(1).replaceAll('.', ',');
+  }
+
+  Future<void> _delete(FoodLogEntry entry) async {
+    final state = context.read<AppState>();
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _hiddenIds.add(entry.id));
+    try {
+      await state.deleteEntry(entry.id);
+    } catch (_) {
+      if (mounted) setState(() => _hiddenIds.remove(entry.id));
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(const SnackBar(
+            content: Text('Silinemedi, lütfen tekrar dene.')));
+      return;
+    }
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(
+        content: Text('${entry.foodName} silindi'),
+        duration: const Duration(seconds: 4),
+        // Auto-hide even though it has an action (Flutter keeps action
+        // SnackBars up by default).
+        persist: false,
+        action: SnackBarAction(
+          label: 'Geri al',
+          onPressed: () => _restore(entry, state, messenger),
+        ),
+      ));
+  }
+
+  Future<void> _restore(FoodLogEntry entry, AppState state,
+      ScaffoldMessengerState messenger) async {
+    try {
+      await state.restoreEntry(entry.id);
+    } catch (_) {
+      messenger.showSnackBar(const SnackBar(
+          content: Text('Geri alınamadı, lütfen tekrar dene.')));
+      return;
+    }
+    if (mounted) setState(() => _hiddenIds.remove(entry.id));
+  }
+
+  Stream<List<FoodLogEntry>> _entriesFor(AppState state, DateTime day) {
+    if (_streamDay != day || _dayStream == null) {
+      _streamDay = day;
+      _dayStream = state.watchEntriesForDate(day);
+    }
+    return _dayStream!;
+  }
 
   bool _isSameDay(DateTime a, DateTime b) =>
       a.year == b.year && a.month == b.month && a.day == b.day;
@@ -69,7 +135,7 @@ class _DiaryScreenState extends State<DiaryScreen> {
   }
 
   Future<void> _openCalendar() async {
-    final now = DateTime.now();
+    final now = context.read<AppState>().clock();
     final picked = await showDatePicker(
       context: context,
       initialDate: _selectedDate,
@@ -96,8 +162,15 @@ class _DiaryScreenState extends State<DiaryScreen> {
     final theme = Theme.of(context);
     final colors = context.dengeColors;
     final state = context.watch<AppState>();
-    final isToday = _isSameDay(_selectedDate, DateTime.now());
-    final showEmpty = !isToday || state.todaysMeals.isEmpty;
+    final isToday = _isSameDay(_selectedDate, state.clock());
+
+    Widget dayContent(DailySummary summary) {
+      // Today always shows the meal cards (with their "add" prompts); only
+      // a past or future day with nothing logged falls back to the empty
+      // illustration.
+      if (!isToday && summary.isEmpty) return _buildEmpty(context);
+      return _buildFilled(context, theme, colors, state, summary, isToday);
+    }
 
     return Scaffold(
       body: SafeArea(
@@ -112,10 +185,30 @@ class _DiaryScreenState extends State<DiaryScreen> {
               const SizedBox(height: 8),
               _buildDayStrip(context),
               const SizedBox(height: 16),
-              if (showEmpty)
-                _buildEmpty(context)
+              if (isToday)
+                dayContent(_hiddenIds.isEmpty
+                    ? state.todaySummary
+                    : DailySummary.fromEntries([
+                        for (final e in state.todayEntries)
+                          if (!_hiddenIds.contains(e.id)) e,
+                      ]))
               else
-                _buildFilled(context, theme, colors, state),
+                StreamBuilder<List<FoodLogEntry>>(
+                  stream: _entriesFor(state, _selectedDate),
+                  builder: (context, snapshot) {
+                    final entries = snapshot.data;
+                    if (entries == null) {
+                      return const Padding(
+                        padding: EdgeInsets.all(32),
+                        child: Center(child: CircularProgressIndicator()),
+                      );
+                    }
+                    return dayContent(DailySummary.fromEntries([
+                      for (final e in entries)
+                        if (!_hiddenIds.contains(e.id)) e,
+                    ]));
+                  },
+                ),
             ],
           ),
         ),
@@ -181,7 +274,7 @@ class _DiaryScreenState extends State<DiaryScreen> {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final colors = context.dengeColors;
-    final today = _dateOnly(DateTime.now());
+    final today = _dateOnly(context.read<AppState>().clock());
     return SizedBox(
       height: 80,
       child: ListView.separated(
@@ -246,10 +339,10 @@ class _DiaryScreenState extends State<DiaryScreen> {
     );
   }
 
-  Widget _buildFilled(
-      BuildContext context, ThemeData theme, DengeColors colors, AppState state) {
+  Widget _buildFilled(BuildContext context, ThemeData theme, DengeColors colors,
+      AppState state, DailySummary summary, bool isToday) {
     final goal = state.user.calorieGoal;
-    final consumed = state.caloriesConsumedToday;
+    final consumed = summary.kcal;
     final remaining = (goal - consumed).clamp(0, goal == 0 ? 0 : goal);
     final progress = goal == 0 ? 0.0 : (consumed / goal).clamp(0.0, 1.0);
 
@@ -267,7 +360,10 @@ class _DiaryScreenState extends State<DiaryScreen> {
                   textBaseline: TextBaseline.alphabetic,
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text('Bugün',
+                    Text(
+                        isToday
+                            ? 'Bugün'
+                            : '${_selectedDate.day} ${_monthNames[_selectedDate.month - 1]}',
                         style: theme.textTheme.bodySmall
                             ?.copyWith(fontWeight: FontWeight.w800)),
                     RichText(
@@ -302,9 +398,9 @@ class _DiaryScreenState extends State<DiaryScreen> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    _macroDot(colors.protein, 'P ${state.proteinConsumedG.round()} g', theme),
-                    _macroDot(colors.carbs, 'K ${state.carbsConsumedG.round()} g', theme),
-                    _macroDot(colors.fat, 'Y ${state.fatConsumedG.round()} g', theme),
+                    _macroDot(colors.protein, 'P ${summary.proteinG.round()} g', theme),
+                    _macroDot(colors.carbs, 'K ${summary.carbsG.round()} g', theme),
+                    _macroDot(colors.fat, 'Y ${summary.fatG.round()} g', theme),
                     Text('$remaining kcal kaldı',
                         style: TextStyle(
                           fontSize: 12,
@@ -318,10 +414,62 @@ class _DiaryScreenState extends State<DiaryScreen> {
           ),
           const SizedBox(height: 16),
           for (final type in MealType.values) ...[
-            _buildMealCard(context, theme, colors, state, type),
+            _buildMealCard(context, theme, colors, summary.meal(type)),
             const SizedBox(height: 16),
           ],
         ],
+      ),
+    );
+  }
+
+  /// One logged food: swipe left to delete (with undo), tap to edit its
+  /// serving or meal.
+  Widget _buildEntryRow(
+      BuildContext context, ThemeData theme, FoodLogEntry entry) {
+    final scheme = theme.colorScheme;
+    return Dismissible(
+      key: ValueKey(entry.id),
+      direction: DismissDirection.endToStart,
+      onDismissed: (_) => _delete(entry),
+      background: Container(
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: 16),
+        decoration: BoxDecoration(
+          color: scheme.errorContainer,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Icon(Icons.delete_outline_rounded,
+            color: scheme.onErrorContainer, semanticLabel: 'Sil'),
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () =>
+            Navigator.of(context).push(AppRoutes.pushEditEntry(entry)),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(entry.foodName,
+                        style: theme.textTheme.bodyLarge
+                            ?.copyWith(fontWeight: FontWeight.w700)),
+                    Text(
+                      '${_fmtAmount(entry.amount)} × ${entry.servingLabel}',
+                      style: theme.textTheme.bodySmall,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              Text('${entry.kcal} kcal',
+                  style: theme.textTheme.bodyMedium
+                      ?.copyWith(fontWeight: FontWeight.w800)),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -347,8 +495,9 @@ class _DiaryScreenState extends State<DiaryScreen> {
   }
 
   Widget _buildMealCard(BuildContext context, ThemeData theme, DengeColors colors,
-      AppState state, MealType type) {
-    final meal = state.todaysMeals.firstWhere((m) => m.type == type);
+      MealSummary meal) {
+    final type = meal.meal;
+    final title = _mealTitles[type]!;
     final goal = _mealGoals[type]!;
     final scheme = theme.colorScheme;
 
@@ -374,13 +523,13 @@ class _DiaryScreenState extends State<DiaryScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(meal.title, style: theme.textTheme.titleMedium),
+                    Text(title, style: theme.textTheme.titleMedium),
                     RichText(
                       text: TextSpan(
                         style: theme.textTheme.bodyMedium,
                         children: [
                           TextSpan(
-                            text: '${meal.calories}',
+                            text: '${meal.kcal}',
                             style: TextStyle(
                               fontWeight: FontWeight.w800,
                               color: theme.textTheme.bodyLarge?.color,
@@ -410,14 +559,19 @@ class _DiaryScreenState extends State<DiaryScreen> {
               ),
             ],
           ),
-          if (meal.logged) ...[
+          if (meal.entries.isNotEmpty) ...[
             const SizedBox(height: 12),
             Container(
-              padding: const EdgeInsets.only(top: 12),
+              padding: const EdgeInsets.only(top: 4),
               decoration: BoxDecoration(
                 border: Border(top: BorderSide(color: colors.divider)),
               ),
-              child: Text(meal.description, style: theme.textTheme.bodyMedium),
+              child: Column(
+                children: [
+                  for (final entry in meal.entries)
+                    _buildEntryRow(context, theme, entry),
+                ],
+              ),
             ),
           ] else ...[
             const SizedBox(height: 16),
@@ -444,7 +598,7 @@ class _DiaryScreenState extends State<DiaryScreen> {
                           size: 18, color: AppTheme.primaryText(theme.brightness)),
                       const SizedBox(width: 8),
                       Text(
-                        '${meal.title} ekle',
+                        '$title ekle',
                         style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w800,

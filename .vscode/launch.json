@@ -1,0 +1,29 @@
+{
+  // Run / debug configurations for VS Code (F5 or the Run and Debug panel).
+  // Supabase settings come from env/dev.json, which is gitignored; copy
+  // env/example.json to env/dev.json and fill it in first (CLAUDE.md §13.1).
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Denge (Supabase, debug)",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart",
+      "toolArgs": ["--dart-define-from-file=env/dev.json"]
+    },
+    {
+      "name": "Denge (Supabase, profile)",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart",
+      "flutterMode": "profile",
+      "toolArgs": ["--dart-define-from-file=env/dev.json"]
+    },
+    {
+      "name": "Denge (yalnızca yerel, bulut yok)",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart"
+    }
+  ]
+}
