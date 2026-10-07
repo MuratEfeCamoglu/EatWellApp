@@ -282,16 +282,16 @@ uygulama açılıyor. Bir aşama bitmeden sonrakine geçme.
 
 ### Aşama 3: Su ve kilo
 
-- [ ] `WaterDao` / `WaterRepository`: `watchGlassesForDate(date)`, `setGlasses(date, glasses, now)` (upsert).
-- [ ] `AppState.waterGlasses` bugünün değerinden türetilir. `setWaterGlasses` repository'ye yazar.
+- [x] `WaterDao` / `WaterRepository`: `watchGlassesForDate(date)`, `setGlasses(date, glasses, now)` (upsert).
+- [x] `AppState.waterGlasses` bugünün değerinden türetilir. `setWaterGlasses` repository'ye yazar.
       Gece yarısından sonra yeni gün 0 bardakla başlar.
-- [ ] `WeightDao` / `WeightRepository`: `addEntry(kg, now)`, `watchHistory({from})`, `latest()`.
-- [ ] `AppState.weightHistory` veritabanından gelir. `logWeight` hem veritabanına hem `user_weight` tercihine yazar.
-- [ ] `completeSetup()`: kurulumdaki kilo ilk `weight_entries` kaydı olarak eklenir.
-- [ ] **Eski kullanıcıların geçişi:** `load()` sırasında `setupComplete == true` ve `weight_entries`
+- [x] `WeightDao` / `WeightRepository`: `addEntry(kg, now)`, `watchHistory({from})`, `latest()`.
+- [x] `AppState.weightHistory` veritabanından gelir. `logWeight` hem veritabanına hem `user_weight` tercihine yazar.
+- [x] `completeSetup()`: kurulumdaki kilo ilk `weight_entries` kaydı olarak eklenir.
+- [x] **Eski kullanıcıların geçişi:** `load()` sırasında `setupComplete == true` ve `weight_entries`
       boşsa, `user_weight` değerini o günün tarihiyle tek kayıt olarak ekle. Bu işlem sadece bir kez çalışmalı.
-- [ ] `progress_screen.dart`: haftalık/aylık grafik gerçek geçmişten çizilir. Her gün için son ölçüm alınır.
-- [ ] **Testler:** su upsert (aynı gün iki kez yazınca tek satır), gün değişimi, kilo geçmişi
+- [x] `progress_screen.dart`: haftalık/aylık grafik gerçek geçmişten çizilir. Her gün için son ölçüm alınır.
+- [x] **Testler:** su upsert (aynı gün iki kez yazınca tek satır), gün değişimi, kilo geçmişi
       sıralaması, eski kullanıcı geçişinin tek sefer çalışması.
 
 **Kabul:** Su ve kilo uygulama yeniden açılınca korunuyor. Kilo grafiği birden fazla nokta gösteriyor.

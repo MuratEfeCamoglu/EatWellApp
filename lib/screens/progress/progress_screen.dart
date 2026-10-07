@@ -5,13 +5,15 @@ import 'package:provider/provider.dart';
 import '../../data/app_state.dart';
 import '../../data/mock_data.dart';
 import '../../data/models.dart';
+import '../../data/stats/weight_series.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/weight_input_dialog.dart';
 
 /// İlerleme (Progress) tab: weight trend chart, goal progress and a couple
-/// of streak/water stat tiles, driven by [AppState]'s real (initially
-/// single-point) weight log rather than a fabricated multi-week trend.
+/// of streak/water stat tiles, driven by [AppState]'s stored weight log
+/// (the last measurement of each day; the last 7 or 30 days on the chart)
+/// rather than a fabricated multi-week trend.
 class ProgressScreen extends StatefulWidget {
   const ProgressScreen({super.key});
 
@@ -37,8 +39,15 @@ class _ProgressScreenState extends State<ProgressScreen> {
       title: 'Kilonu güncelle',
       initialKg: currentWeight,
     );
-    if (result != null && context.mounted) {
-      context.read<AppState>().logWeight(result);
+    if (result == null || !context.mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await context.read<AppState>().logWeight(result);
+    } catch (_) {
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(const SnackBar(
+            content: Text('Kilo kaydedilemedi, lütfen tekrar dene.')));
     }
   }
 
@@ -50,24 +59,23 @@ class _ProgressScreenState extends State<ProgressScreen> {
 
     final state = context.watch<AppState>();
     final user = state.user;
-    final history = state.weightHistory.isEmpty
-        ? [WeightEntry(DateTime.now(), user.weightKg)]
-        : state.weightHistory;
-    final startWeight = history.first.kg;
-    final currentWeight = history.last.kg;
+    final now = state.clock();
+    final daily = state.weightHistory.isEmpty
+        ? [WeightEntry(now, user.weightKg)]
+        : latestPerDay(state.weightHistory);
+    final history = lastDays(daily, now, _weekly ? 7 : 30);
+    final startWeight = daily.first.kg;
+    final currentWeight = daily.last.kg;
     final goalWeight = user.goalWeightKg;
-    final weeklyChange = history.length >= 2
-        ? currentWeight - history[history.length - 2].kg
-        : 0.0;
-    final totalChange = currentWeight - startWeight;
     final remainingKg = (currentWeight - goalWeight).clamp(0, double.infinity);
     final totalToLose = (startWeight - goalWeight).abs();
     final progressPct = totalToLose == 0
         ? 0.0
         : (((startWeight - currentWeight) / totalToLose).clamp(0.0, 1.0));
 
-    final change = _weekly ? weeklyChange : totalChange;
-    final changeLabel = _weekly ? 'bu hafta' : 'son ${history.length} hafta';
+    // Change across the visible window (last 7 / 30 days).
+    final change = history.last.kg - history.first.kg;
+    final changeLabel = _weekly ? 'son 7 gün' : 'son 30 gün';
 
     final waterPct = MockData.waterGlassesGoal == 0
         ? 0

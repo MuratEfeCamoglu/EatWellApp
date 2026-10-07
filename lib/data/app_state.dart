@@ -10,6 +10,8 @@ import 'health_consent.dart';
 import 'mock_data.dart';
 import 'models.dart';
 import 'repositories/food_log_repository.dart';
+import 'repositories/water_repository.dart';
+import 'repositories/weight_repository.dart';
 import 'stats/daily_summary.dart';
 
 enum Gender { female, male }
@@ -121,6 +123,11 @@ class AppState extends ChangeNotifier {
   static const _kConsentVersion = 'consent_version';
   static const _kConsentAt = 'consent_at';
 
+  /// Set once the profile weight of a pre-database install has been copied
+  /// into `weight_entries` (or setup recorded a first weight itself), so
+  /// the migration never runs twice.
+  static const _kWeightMigrated = 'weight_history_migrated';
+
   ThemeMode themeMode = ThemeMode.light;
   TextScaleOption textScale = TextScaleOption.normal;
   bool reduceMotion = false;
@@ -189,19 +196,36 @@ class AppState extends ChangeNotifier {
   double get proteinConsumedG => _todaySummary.proteinG;
   double get carbsConsumedG => _todaySummary.carbsG;
   double get fatConsumedG => _todaySummary.fatG;
-  int waterGlasses = 0;
+  /// Glasses drunk today; reloaded for the new day after midnight.
+  int get waterGlasses => _waterGlasses;
+  int _waterGlasses = 0;
+  WaterRepository? _water;
 
-  /// Real weight log, seeded with a single entry (today, at setup weight)
-  /// once setup completes — not a fake multi-week downward trend.
+  /// Every weight measurement, oldest first (from the database when there
+  /// is one). Charts reduce it to the last measurement of each day.
   final List<WeightEntry> weightHistory = [];
+  WeightRepository? _weights;
 
   int get caloriesConsumedToday => _todaySummary.kcal;
 
   bool get hasLoggedFoodToday => todayEntries.isNotEmpty;
 
-  void setWaterGlasses(int value) {
-    waterGlasses = value.clamp(0, MockData.waterGlassesGoal);
+  /// Sets today's glasses (clamped to the goal). Shown immediately; if the
+  /// write fails the previous value comes back and the error is rethrown.
+  Future<void> setWaterGlasses(int value) async {
+    await rollOverDayIfNeeded();
+    final previous = _waterGlasses;
+    _waterGlasses = value.clamp(0, MockData.waterGlassesGoal);
     notifyListeners();
+    final repo = _water;
+    if (repo == null) return;
+    try {
+      await repo.setGlasses(_todayKey, _waterGlasses, clock());
+    } catch (_) {
+      _waterGlasses = previous;
+      notifyListeners();
+      rethrow;
+    }
   }
 
   /// Titles of recipes the user has hearted, persisted across restarts.
@@ -215,11 +239,38 @@ class AppState extends ChangeNotifier {
     _prefs?.setStringList(_kFavoriteRecipes, favoriteRecipes.toList());
   }
 
-  void logWeight(double kg) {
-    weightHistory.add(WeightEntry(DateTime.now(), kg));
+  /// Records a new weight and keeps the profile's `user_weight` equal to
+  /// the latest measurement. Throws if the database write fails.
+  Future<void> logWeight(double kg) async {
+    final now = clock();
+    final repo = _weights;
+    if (repo == null) {
+      weightHistory.add(WeightEntry(now, kg));
+    } else {
+      await repo.addEntry(kg, now);
+      await _reloadWeights(repo);
+    }
     user = user.copyWith(weightKg: kg);
     notifyListeners();
-    _prefs?.setDouble(_kWeight, kg);
+    await _prefs?.setDouble(_kWeight, kg);
+  }
+
+  Future<void> _reloadWeights(WeightRepository repo) async {
+    final history = await repo.history();
+    weightHistory
+      ..clear()
+      ..addAll(history);
+  }
+
+  /// One-time copy of a pre-database install's profile weight into
+  /// `weight_entries`, dated today, so its chart doesn't start empty.
+  Future<void> _migrateLegacyWeight(
+      WeightRepository repo, SharedPreferences prefs) async {
+    if (prefs.getBool(_kWeightMigrated) ?? false) return;
+    if (await repo.latest() == null && user.weightKg > 0) {
+      await repo.addEntry(user.weightKg, clock());
+    }
+    await prefs.setBool(_kWeightMigrated, true);
   }
 
   SharedPreferences? _prefs;
@@ -291,12 +342,26 @@ class AppState extends ChangeNotifier {
         weightKg: prefs.getDouble(_kWeight) ?? 0,
         goalWeightKg: prefs.getDouble(_kGoalWeight) ?? 0,
       );
-      // Weight history itself isn't persisted (no history storage yet), so
-      // reseed a single point from the last known weight rather than
-      // showing an empty chart after every restart.
-      weightHistory.add(WeightEntry(DateTime.now(), user.weightKg));
     }
+    await _loadWeights(prefs);
     notifyListeners();
+  }
+
+  Future<void> _loadWeights(SharedPreferences prefs) async {
+    weightHistory.clear();
+    final repo = _weights;
+    if (repo == null) {
+      // No database: a single point from the last known weight rather
+      // than an empty chart.
+      if (setupComplete) weightHistory.add(WeightEntry(clock(), user.weightKg));
+      return;
+    }
+    try {
+      if (setupComplete) await _migrateLegacyWeight(repo, prefs);
+      await _reloadWeights(repo);
+    } catch (e, st) {
+      developer.log('Loading weights failed', error: e, stackTrace: st);
+    }
   }
 
   Future<void> _attachDatabase(AppDatabase db) async {
@@ -306,11 +371,15 @@ class AppState extends ChangeNotifier {
       await db.customSelect('SELECT 1').get();
       _db = db;
       _foodLog = FoodLogRepository(db);
+      _water = WaterRepository(db);
+      _weights = WeightRepository(db);
       storageError = null;
     } catch (e, st) {
       developer.log('Database open failed', error: e, stackTrace: st);
       _db = null;
       _foodLog = null;
+      _water = null;
+      _weights = null;
       storageError =
           'Kayıtların saklandığı veritabanı açılamadı. Uygulamayı kullanmaya '
           'devam edebilirsin ama bu oturumdaki kayıtlar kaydedilmeyecek.';
@@ -334,9 +403,11 @@ class AppState extends ChangeNotifier {
     final repo = _foodLog;
     if (repo == null) {
       _setTodayEntries(const []);
+      _waterGlasses = 0;
     } else {
       try {
         _setTodayEntries(await repo.entriesForDate(_todayKey));
+        _waterGlasses = await _water!.glassesFor(_todayKey);
       } catch (e, st) {
         developer.log('Loading today failed', error: e, stackTrace: st);
         _setTodayEntries(const []);
@@ -518,15 +589,32 @@ class AppState extends ChangeNotifier {
     );
     setupComplete = true;
     weeklyPaceKg = draft.weeklyPaceKg;
-    memberSince = DateTime.now();
-    weightHistory
-      ..clear()
-      ..add(WeightEntry(DateTime.now(), weightKg));
+    final now = clock();
+    memberSince = now;
+    final weights = _weights;
+    if (weights == null) {
+      weightHistory
+        ..clear()
+        ..add(WeightEntry(now, weightKg));
+    } else {
+      // A failed history write must not break setup itself; the profile
+      // weight below is still saved.
+      try {
+        await weights.addEntry(weightKg, now);
+        await _reloadWeights(weights);
+      } catch (e, st) {
+        developer.log('Saving setup weight failed', error: e, stackTrace: st);
+        weightHistory
+          ..clear()
+          ..add(WeightEntry(now, weightKg));
+      }
+    }
     notifyListeners();
 
     final prefs = _prefs ?? await SharedPreferences.getInstance();
     _prefs = prefs;
     await Future.wait([
+      prefs.setBool(_kWeightMigrated, true),
       prefs.setBool(_kSetupComplete, true),
       prefs.setDouble(_kWeeklyPace, weeklyPaceKg),
       prefs.setString(_kMemberSince, memberSince!.toIso8601String()),

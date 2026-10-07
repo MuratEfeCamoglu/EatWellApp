@@ -155,4 +155,91 @@ void main() {
       });
     }
   });
+
+  group('water', () {
+    test('survives a reload and a new day starts at 0', () async {
+      final db = memoryDb();
+      final first = await loaded(db: db, autoDispose: false);
+      await first.setWaterGlasses(4);
+      expect(first.waterGlasses, 4);
+      first.dispose();
+
+      final second = await loaded(db: db, autoDispose: false);
+      expect(second.waterGlasses, 4);
+
+      now = DateTime(2026, 10, 8, 0, 10);
+      await second.rollOverDayIfNeeded();
+      expect(second.waterGlasses, 0);
+      second.dispose();
+
+      now = DateTime(2026, 10, 7, 18);
+      final back = await loaded(db: db);
+      expect(back.waterGlasses, 4, reason: 'the old day is untouched');
+    });
+
+    test('is clamped to the goal', () async {
+      final state = await loaded(db: memoryDb());
+      await state.setWaterGlasses(99);
+      expect(state.waterGlasses, 10);
+      await state.setWaterGlasses(-3);
+      expect(state.waterGlasses, 0);
+    });
+  });
+
+  group('weight', () {
+    test('logWeight persists and updates the profile weight', () async {
+      SharedPreferences.setMockInitialValues({
+        'setup_complete': true,
+        'user_weight': 80.0,
+        'weight_history_migrated': true,
+      });
+      final db = memoryDb();
+      final first = await loaded(db: db, autoDispose: false);
+      await first.logWeight(79.2);
+      expect(first.user.weightKg, 79.2);
+      first.dispose();
+
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getDouble('user_weight'), 79.2);
+
+      final second = await loaded(db: db);
+      expect(second.weightHistory.map((e) => e.kg), [79.2]);
+      expect(second.user.weightKg, 79.2);
+    });
+
+    test('completeSetup records the setup weight as the first entry',
+        () async {
+      final db = memoryDb();
+      final state = await loaded(db: db);
+      state.draft.weightKg = 66;
+      await state.completeSetup();
+      expect(state.weightHistory.map((e) => e.kg), [66]);
+      expect((await db.weightDao.history()).single.kg, 66);
+      expect(state.weightHistory.single.date, now);
+    });
+
+    test('existing users get their profile weight migrated exactly once',
+        () async {
+      SharedPreferences.setMockInitialValues({
+        'setup_complete': true,
+        'user_weight': 82.5,
+      });
+      final db = memoryDb();
+      final first = await loaded(db: db, autoDispose: false);
+      expect(first.weightHistory.map((e) => e.kg), [82.5]);
+      first.dispose();
+
+      // A second launch must not add another copy.
+      final second = await loaded(db: db);
+      expect(second.weightHistory, hasLength(1));
+      final rows = await db.weightDao.history();
+      expect(rows.single.date, '2026-10-07');
+    });
+
+    test('migration does not run before setup is complete', () async {
+      final db = memoryDb();
+      await loaded(db: db);
+      expect(await db.weightDao.history(), isEmpty);
+    });
+  });
 }
