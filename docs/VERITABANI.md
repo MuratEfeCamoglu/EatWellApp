@@ -1,7 +1,6 @@
 # Denge — Veri Tabanı ve ER Diyagramı
 
-> **Kaynak:** `feat/profil-menuleri` dalı (`5ab5ab9`). Yerel veritabanı (Aşama 0–6) ve
-> Supabase senkronu bu dalda. `main` dalında henüz veritabanı yok.
+> **Kaynak:** `main` dalı (`5e43a88`). Yerel veritabanı (Aşama 0–6) ve Supabase senkronu dahil.
 >
 > Okunan dosyalar: `lib/data/db/tables.dart`, `lib/data/db/app_database.dart`,
 > `supabase/migrations/*.sql`, `lib/data/app_state.dart`, `lib/data/reminders.dart`.
