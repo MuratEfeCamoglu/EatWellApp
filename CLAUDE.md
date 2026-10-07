@@ -235,17 +235,17 @@ uygulama açılıyor. Bir aşama bitmeden sonrakine geçme.
 
 ### Aşama 1: Günlük kayıtlarını kalıcı yap (en önemli aşama)
 
-- [ ] `FoodLogEntry` modeli (`lib/data/models.dart` veya ayrı dosya): §5.2'deki alanlar ve
+- [x] `FoodLogEntry` modeli (`lib/data/models.dart` veya ayrı dosya): §5.2'deki alanlar ve
       `FoodLogEntry.fromFood(FoodItem food, double amount, MealType meal, DateTime now, {source})`.
-- [ ] `FoodLogDao`:
+- [x] `FoodLogDao`:
   - `insertEntry(...)`
   - `Stream<List<...>> watchEntriesForDate(String date)` (silinmemiş, `logged_at` sıralı)
   - `Future<List<...>> entriesForDate(String date)`
   - `Future<Set<String>> datesWithEntries({String? from, String? to})` (seri için)
-- [ ] `FoodLogRepository`: UUID, `created_at`/`updated_at`/`logged_at` üretimi. Drift satırı ↔ `FoodLogEntry` çevrimi.
-- [ ] `lib/data/stats/daily_summary.dart`: `DailySummary.fromEntries(List<FoodLogEntry>)` →
+- [x] `FoodLogRepository`: UUID, `created_at`/`updated_at`/`logged_at` üretimi. Drift satırı ↔ `FoodLogEntry` çevrimi.
+- [x] `lib/data/stats/daily_summary.dart`: `DailySummary.fromEntries(List<FoodLogEntry>)` →
       toplam kcal, protein, karb, yağ ve öğün başına kcal ile yiyecek listesi.
-- [ ] `AppState` değişiklikleri:
+- [x] `AppState` değişiklikleri:
   - `addFoodToMeal(type, food, amount)` imzası **aynı kalır** (3 ekran bunu çağırıyor), içi
     repository'ye yazacak şekilde değişir. `source` için isteğe bağlı parametre eklenebilir.
   - `todaysMeals`, `proteinConsumedG`, `carbsConsumedG`, `fatConsumedG`, `caloriesConsumedToday`
@@ -254,10 +254,10 @@ uygulama açılıyor. Bir aşama bitmeden sonrakine geçme.
   - `todayEntries` (bugünün `FoodLogEntry` listesi) eklenir. `load()` sırasında ve her yazmadan sonra güncellenir.
   - Bugünün kayıtları `watchEntriesForDate` stream'i ile dinlenir. Gün değişirse (uygulama gece
     yarısını geçerek açık kalırsa) abonelik yeni güne taşınır. `now` dışarıdan verilebilir olmalı.
-- [ ] `diary_screen.dart`: Seçili gün için `watchEntriesForDate` stream'ini `StreamBuilder` ile
+- [x] `diary_screen.dart`: Seçili gün için `watchEntriesForDate` stream'ini `StreamBuilder` ile
       kullan. Geçmiş günler artık boş değil, o günün kayıtları görünür. `showEmpty = !isToday` mantığını kaldır.
-- [ ] `home_screen.dart`: Değişiklik gerekmemeli (getter'lar aynı). Kontrol et.
-- [ ] **Testler:**
+- [x] `home_screen.dart`: Değişiklik gerekmemeli (getter'lar aynı). Kontrol et.
+- [x] **Testler:**
   - DAO: ekle → oku, başka güne ait kayıt gelmez, silinmiş kayıt gelmez.
   - `DailySummary`: boş gün, tek kayıt, çok kayıt toplamları.
   - `AppState`: `addFoodToMeal` sonrası `caloriesConsumedToday` artar. `AppState` yeniden yüklenince kayıt hâlâ orada.

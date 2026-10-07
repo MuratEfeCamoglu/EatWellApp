@@ -177,19 +177,29 @@ class _SearchScreenState extends State<SearchScreen> {
         candidates: result.candidates,
         onPick: (food) {
           Navigator.of(context).pop();
-          Navigator.of(this.context)
-              .push(AppRoutes.pushFoodDetail(food, initialMeal: _meal));
+          Navigator.of(this.context).push(AppRoutes.pushFoodDetail(food,
+              initialMeal: _meal, source: FoodLogSource.photo));
         },
       ),
     );
   }
 
-  void _quickAdd(FoodItem food) {
-    context.read<AppState>().addFoodToMeal(_meal, food, 1);
-    ScaffoldMessenger.of(context)
+  Future<void> _quickAdd(FoodItem food) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final meal = _meal;
+    try {
+      await context.read<AppState>().addFoodToMeal(meal, food, 1);
+    } catch (_) {
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(const SnackBar(
+            content: Text('Yiyecek kaydedilemedi, lütfen tekrar dene.')));
+      return;
+    }
+    messenger
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(
-          content: Text('${food.name} ${_mealLabels[_meal]} listesine eklendi')));
+          content: Text('${food.name} ${_mealLabels[meal]} listesine eklendi')));
   }
 
   @override

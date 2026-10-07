@@ -86,7 +86,12 @@ class _BarcodeScreenState extends State<BarcodeScreen> {
   /// had (the product's values are per 100 g) and the meal to add it to.
   void _chooseAmount(FoodItem product) {
     Navigator.of(context)
-        .pushReplacement(AppRoutes.pushFoodDetail(product, initialMeal: _meal));
+        .pushReplacement(AppRoutes.pushFoodDetail(
+          product,
+          initialMeal: _meal,
+          source: FoodLogSource.barcode,
+          sourceRef: _scannedCode,
+        ));
   }
 
   @override

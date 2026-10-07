@@ -65,8 +65,19 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
       ),
     );
     if (meal == null || !mounted) return;
-    context.read<AppState>().addFoodToMeal(meal, recipe.asServing, 1);
-    ScaffoldMessenger.of(context)
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await context
+          .read<AppState>()
+          .addFoodToMeal(meal, recipe.asServing, 1, source: FoodLogSource.recipe);
+    } catch (_) {
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(const SnackBar(
+            content: Text('Tarif kaydedilemedi, lütfen tekrar dene.')));
+      return;
+    }
+    messenger
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(
           content: Text('1 porsiyon ${recipe.title} ${_mealLabels[meal]} listesine eklendi')));

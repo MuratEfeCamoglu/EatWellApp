@@ -15,9 +15,19 @@ import '../../widgets/section_card.dart';
 /// FoodDetail-dark.dc.html). A serving-size stepper live-recalculates
 /// calories/macros from [food]'s per-100g values.
 class FoodDetailScreen extends StatefulWidget {
-  const FoodDetailScreen({super.key, required this.food, this.initialMeal});
+  const FoodDetailScreen({
+    super.key,
+    required this.food,
+    this.initialMeal,
+    this.source = FoodLogSource.catalog,
+    this.sourceRef,
+  });
 
   final FoodItem food;
+
+  /// Recorded on the diary entry (e.g. barcode + the scanned number).
+  final FoodLogSource source;
+  final String? sourceRef;
 
   /// The meal to add to; defaults to whichever meal fits the current time
   /// of day when this screen is opened without a specific target (e.g. a
@@ -60,6 +70,28 @@ class _FoodDetailScreenState extends State<FoodDetailScreen> {
     final rounded = (x * 10).round() / 10;
     if (rounded == rounded.roundToDouble()) return rounded.toInt().toString();
     return rounded.toStringAsFixed(1).replaceAll('.', ',');
+  }
+
+  Future<void> _add() async {
+    final food = widget.food;
+    final meal = _meal;
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
+    try {
+      await context.read<AppState>().addFoodToMeal(meal, food, _amount,
+          source: widget.source, sourceRef: widget.sourceRef);
+    } catch (_) {
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(const SnackBar(
+            content: Text('Yiyecek kaydedilemedi, lütfen tekrar dene.')));
+      return;
+    }
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(
+          content: Text('${food.name} ${_mealLabels[meal]} listesine eklendi')));
+    if (mounted) navigator.pop();
   }
 
   @override
@@ -319,13 +351,7 @@ class _FoodDetailScreenState extends State<FoodDetailScreen> {
                 border: Border(top: BorderSide(color: colors.divider)),
               ),
               child: ElevatedButton.icon(
-                onPressed: () {
-                  context.read<AppState>().addFoodToMeal(_meal, food, _amount);
-                  ScaffoldMessenger.of(context)
-                    ..hideCurrentSnackBar()
-                    ..showSnackBar(SnackBar(content: Text('${food.name} ${_mealLabels[_meal]} listesine eklendi')));
-                  Navigator.of(context).pop();
-                },
+                onPressed: _add,
                 icon: const Icon(Icons.add_rounded),
                 label: Text('${_mealCtas[_meal]} · $kcal kcal'),
                 style: ElevatedButton.styleFrom(minimumSize: const Size.fromHeight(56)),

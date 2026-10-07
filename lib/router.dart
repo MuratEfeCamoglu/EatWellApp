@@ -65,10 +65,20 @@ class AppRoutes {
   /// Routes that require arguments are pushed with [Navigator.push] and a
   /// [MaterialPageRoute] directly (see [pushFoodDetail], [pushRecipeDetail])
   /// rather than through the named-route table above.
-  static Route<void> pushFoodDetail(FoodItem food, {MealType? initialMeal}) {
+  static Route<void> pushFoodDetail(
+    FoodItem food, {
+    MealType? initialMeal,
+    FoodLogSource source = FoodLogSource.catalog,
+    String? sourceRef,
+  }) {
     return MaterialPageRoute(
       settings: const RouteSettings(name: foodDetail),
-      builder: (_) => FoodDetailScreen(food: food, initialMeal: initialMeal),
+      builder: (_) => FoodDetailScreen(
+        food: food,
+        initialMeal: initialMeal,
+        source: source,
+        sourceRef: sourceRef,
+      ),
     );
   }
 

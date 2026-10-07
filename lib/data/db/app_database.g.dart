@@ -2820,6 +2820,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     'food_log_date',
     'CREATE INDEX food_log_date ON food_log_entries (date)',
   );
+  late final FoodLogDao foodLogDao = FoodLogDao(this as AppDatabase);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();

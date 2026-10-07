@@ -1,12 +1,16 @@
+import 'dart:async';
 import 'dart:developer' as developer;
 
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'db/app_database.dart';
+import 'db/date_key.dart';
 import 'health_consent.dart';
 import 'mock_data.dart';
 import 'models.dart';
+import 'repositories/food_log_repository.dart';
+import 'stats/daily_summary.dart';
 
 enum Gender { female, male }
 
@@ -144,36 +148,56 @@ class AppState extends ChangeNotifier {
   /// since) label instead of a fixed placeholder date.
   DateTime? memberSince;
 
-  /// Nothing logged yet — a fresh profile starts with an empty diary, not
-  /// someone else's sample breakfast/lunch.
-  final List<MealEntry> todaysMeals = [
-    for (final type in MealType.values)
-      MealEntry(
+  static const _mealTitles = {
+    MealType.breakfast: 'Kahvaltı',
+    MealType.lunch: 'Öğle yemeği',
+    MealType.dinner: 'Akşam yemeği',
+    MealType.snack: 'Ara öğün',
+  };
+
+  /// Today's diary entries in logged order. Kept in sync with the database
+  /// (a live subscription plus a refresh after every write); without a
+  /// database it is a plain in-memory list.
+  List<FoodLogEntry> todayEntries = const [];
+  DailySummary _todaySummary = DailySummary.empty;
+
+  /// Local day key [todayEntries] belongs to.
+  String _todayKey = '';
+  StreamSubscription<List<FoodLogEntry>>? _todaySub;
+  Timer? _midnightTimer;
+  FoodLogRepository? _foodLog;
+
+  DailySummary get todaySummary => _todaySummary;
+
+  /// Legacy per-meal view used by Home: one card per meal with the food
+  /// names joined by commas, derived from [todayEntries].
+  List<MealEntry> get todaysMeals => [
+        for (final type in MealType.values)
+          _mealEntry(type, _todaySummary.meal(type)),
+      ];
+
+  static MealEntry _mealEntry(MealType type, MealSummary meal) => MealEntry(
         type: type,
-        title: switch (type) {
-          MealType.breakfast => 'Kahvaltı',
-          MealType.lunch => 'Öğle yemeği',
-          MealType.dinner => 'Akşam yemeği',
-          MealType.snack => 'Ara öğün',
-        },
-        description: 'Henüz eklenmedi',
-        calories: 0,
-        logged: false,
-      ),
-  ];
-  double proteinConsumedG = 0;
-  double carbsConsumedG = 0;
-  double fatConsumedG = 0;
+        title: _mealTitles[type]!,
+        description: meal.entries.isEmpty
+            ? 'Henüz eklenmedi'
+            : meal.entries.map((e) => e.foodName).join(', '),
+        calories: meal.kcal,
+        logged: meal.entries.isNotEmpty,
+      );
+
+  double get proteinConsumedG => _todaySummary.proteinG;
+  double get carbsConsumedG => _todaySummary.carbsG;
+  double get fatConsumedG => _todaySummary.fatG;
   int waterGlasses = 0;
 
   /// Real weight log, seeded with a single entry (today, at setup weight)
   /// once setup completes — not a fake multi-week downward trend.
   final List<WeightEntry> weightHistory = [];
 
-  int get caloriesConsumedToday =>
-      todaysMeals.fold(0, (sum, m) => sum + m.calories);
+  int get caloriesConsumedToday => _todaySummary.kcal;
 
-  bool get hasLoggedFoodToday => todaysMeals.any((m) => m.logged);
+  bool get hasLoggedFoodToday => todayEntries.isNotEmpty;
 
   void setWaterGlasses(int value) {
     waterGlasses = value.clamp(0, MockData.waterGlassesGoal);
@@ -220,6 +244,7 @@ class AppState extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     _prefs = prefs;
     if (db != null) await _attachDatabase(db);
+    await _loadToday();
 
     final themeName = prefs.getString(_kThemeMode);
     themeMode = switch (themeName) {
@@ -280,14 +305,82 @@ class AppState extends ChangeNotifier {
       // (and any open/migration error to surface) right here.
       await db.customSelect('SELECT 1').get();
       _db = db;
+      _foodLog = FoodLogRepository(db);
       storageError = null;
     } catch (e, st) {
       developer.log('Database open failed', error: e, stackTrace: st);
       _db = null;
+      _foodLog = null;
       storageError =
           'Kayıtların saklandığı veritabanı açılamadı. Uygulamayı kullanmaya '
           'devam edebilirsin ama bu oturumdaki kayıtlar kaydedilmeyecek.';
     }
+  }
+
+  void _setTodayEntries(List<FoodLogEntry> entries) {
+    todayEntries = List.unmodifiable(entries);
+    _todaySummary = DailySummary.fromEntries(todayEntries);
+  }
+
+  /// (Re)binds today's entries to the current local day: loads them,
+  /// subscribes to changes and arms a timer for the next midnight.
+  Future<void> _loadToday() async {
+    final now = clock();
+    _todayKey = dateKey(now);
+    await _todaySub?.cancel();
+    _todaySub = null;
+    _midnightTimer?.cancel();
+
+    final repo = _foodLog;
+    if (repo == null) {
+      _setTodayEntries(const []);
+    } else {
+      try {
+        _setTodayEntries(await repo.entriesForDate(_todayKey));
+      } catch (e, st) {
+        developer.log('Loading today failed', error: e, stackTrace: st);
+        _setTodayEntries(const []);
+      }
+      final key = _todayKey;
+      _todaySub = repo.watchDate(key).listen((entries) {
+        if (key != _todayKey) return;
+        _setTodayEntries(entries);
+        notifyListeners();
+      }, onError: (Object e, StackTrace st) {
+        developer.log('Watching today failed', error: e, stackTrace: st);
+      });
+      final nextMidnight = DateTime(now.year, now.month, now.day + 1);
+      _midnightTimer = Timer(
+        nextMidnight.difference(now) + const Duration(seconds: 1),
+        rollOverDayIfNeeded,
+      );
+    }
+  }
+
+  /// Moves "today" to the new day if the clock passed midnight while the
+  /// app stayed open; called by the midnight timer and before writes.
+  Future<void> rollOverDayIfNeeded() async {
+    if (dateKey(clock()) == _todayKey) return;
+    await _loadToday();
+    notifyListeners();
+  }
+
+  /// Live entries of the local day containing [day], for the Diary's day
+  /// browser. Without a database only today has (in-memory) entries.
+  Stream<List<FoodLogEntry>> watchEntriesForDate(DateTime day) {
+    final key = dateKey(day);
+    final repo = _foodLog;
+    if (repo == null) {
+      return Stream.value(key == _todayKey ? todayEntries : const []);
+    }
+    return repo.watchDate(key);
+  }
+
+  @override
+  void dispose() {
+    _todaySub?.cancel();
+    _midnightTimer?.cancel();
+    super.dispose();
   }
 
   void setThemeMode(ThemeMode mode) {
@@ -452,23 +545,26 @@ class AppState extends ChangeNotifier {
   }
 
   /// Adds [amount] servings (matching [food]'s serving size) of [food] to
-  /// today's [type] meal, updating its calories/description in place so the
-  /// change is visible everywhere the meal is shown.
-  void addFoodToMeal(MealType type, FoodItem food, double amount) {
-    final index = todaysMeals.indexWhere((m) => m.type == type);
-    if (index == -1) return;
-    final existing = todaysMeals[index];
-    final kcal = (food.caloriesPer100g * amount).round();
-
-    todaysMeals[index] = existing.copyWith(
-      description:
-          existing.logged ? '${existing.description}, ${food.name}' : food.name,
-      calories: existing.calories + kcal,
-      logged: true,
-    );
-    proteinConsumedG += food.proteinG * amount;
-    carbsConsumedG += food.carbsG * amount;
-    fatConsumedG += food.fatG * amount;
+  /// today's [type] meal and saves it. Throws if the write fails so the
+  /// calling screen can tell the user.
+  Future<void> addFoodToMeal(
+    MealType type,
+    FoodItem food,
+    double amount, {
+    FoodLogSource source = FoodLogSource.catalog,
+    String? sourceRef,
+  }) async {
+    await rollOverDayIfNeeded();
+    final now = clock();
+    final draft = FoodLogEntry.fromFood(food, amount, type, now,
+        source: source, sourceRef: sourceRef);
+    final repo = _foodLog;
+    if (repo == null) {
+      _setTodayEntries([...todayEntries, draft]);
+    } else {
+      await repo.add(draft, now);
+      _setTodayEntries(await repo.entriesForDate(_todayKey));
+    }
     notifyListeners();
   }
 }

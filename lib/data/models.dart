@@ -5,6 +5,8 @@ library;
 
 import 'package:flutter/material.dart' show IconData, Icons;
 
+import 'db/date_key.dart';
+
 class UserProfile {
   const UserProfile({
     required this.name,
@@ -235,4 +237,103 @@ class WeightEntry {
   const WeightEntry(this.date, this.kg);
   final DateTime date;
   final double kg;
+}
+
+/// Where a diary entry came from; stored as its `name`.
+enum FoodLogSource { catalog, recipe, barcode, photo, custom }
+
+/// One food in the diary, with its name, serving and nutrition copied at
+/// log time so later catalog changes never rewrite past days.
+class FoodLogEntry {
+  const FoodLogEntry({
+    required this.id,
+    required this.date,
+    required this.meal,
+    required this.foodName,
+    this.brand = '',
+    required this.servingLabel,
+    required this.amount,
+    required this.kcal,
+    required this.proteinG,
+    required this.carbsG,
+    required this.fatG,
+    this.source = FoodLogSource.catalog,
+    this.sourceRef,
+    required this.loggedAt,
+  });
+
+  /// [amount] servings of [food] eaten as [meal] at [now]. The single place
+  /// the diary's nutrition maths lives: `caloriesPer100g` is (as everywhere
+  /// else in the app) treated as the value of one `servingLabel` serving,
+  /// and [amount] multiplies it.
+  factory FoodLogEntry.fromFood(
+    FoodItem food,
+    double amount,
+    MealType meal,
+    DateTime now, {
+    FoodLogSource source = FoodLogSource.catalog,
+    String? sourceRef,
+  }) {
+    return FoodLogEntry(
+      id: '',
+      date: dateKey(now),
+      meal: meal,
+      foodName: food.name,
+      brand: food.brand,
+      servingLabel: food.servingLabel,
+      amount: amount,
+      kcal: (food.caloriesPer100g * amount).round(),
+      proteinG: food.proteinG * amount,
+      carbsG: food.carbsG * amount,
+      fatG: food.fatG * amount,
+      source: source,
+      sourceRef: sourceRef,
+      loggedAt: now.toUtc(),
+    );
+  }
+
+  /// UUID; empty until the entry has been saved.
+  final String id;
+
+  /// Local day, `yyyy-MM-dd`.
+  final String date;
+  final MealType meal;
+  final String foodName;
+  final String brand;
+  final String servingLabel;
+
+  /// Multiplier of [servingLabel].
+  final double amount;
+
+  /// Totals for [amount] servings.
+  final int kcal;
+  final double proteinG;
+  final double carbsG;
+  final double fatG;
+  final FoodLogSource source;
+
+  /// Barcode or custom food id, depending on [source].
+  final String? sourceRef;
+
+  /// When it was added (UTC); orders entries within a day.
+  final DateTime loggedAt;
+
+  FoodLogEntry copyWith({String? id}) {
+    return FoodLogEntry(
+      id: id ?? this.id,
+      date: date,
+      meal: meal,
+      foodName: foodName,
+      brand: brand,
+      servingLabel: servingLabel,
+      amount: amount,
+      kcal: kcal,
+      proteinG: proteinG,
+      carbsG: carbsG,
+      fatG: fatG,
+      source: source,
+      sourceRef: sourceRef,
+      loggedAt: loggedAt,
+    );
+  }
 }
