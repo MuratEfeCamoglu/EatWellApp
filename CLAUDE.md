@@ -331,13 +331,14 @@ uygulama açılıyor. Bir aşama bitmeden sonrakine geçme.
 
 ### Aşama 6: Veri yönetimi ve KVKK
 
-- [ ] Ayarlar ekranına **"Tüm verilerimi sil"**: onay diyaloğundan sonra veritabanındaki bütün
+- [x] Ayarlar ekranına **"Tüm verilerimi sil"**: onay diyaloğundan sonra veritabanındaki bütün
       tablolar **fiziksel olarak** boşaltılır ve `shared_preferences` temizlenir. Ardından
       karşılama ekranına dönülür. (Yumuşak silme burada uygulanmaz, kullanıcı gerçekten silinmesini istiyor.)
-- [ ] Eski kayıt temizliği: `deleted_at` dolu ve 30 günden eski satırlar uygulama açılışında
+- [x] Eski kayıt temizliği: `deleted_at` dolu ve 30 günden eski satırlar uygulama açılışında
       kalıcı olarak silinir. (Bulut senkronu eklendiğinde bu süre `synced_at` kontrolüne bağlanacak.)
 - [ ] (İsteğe bağlı) "Verilerimi dışa aktar": günlük, su ve kiloyu JSON dosyası olarak paylaş.
-- [ ] **Testler:** silme sonrası tüm tablolar boş, `AppState` ilk açılış durumunda.
+      *Henüz yapılmadı: paylaşım için yeni bir paket (`share_plus`) gerekiyor.*
+- [x] **Testler:** silme sonrası tüm tablolar boş, `AppState` ilk açılış durumunda.
 
 ---
 

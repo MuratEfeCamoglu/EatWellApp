@@ -3,6 +3,7 @@ import 'package:denge/data/custom_food.dart';
 import 'package:denge/data/db/app_database.dart';
 import 'package:denge/data/models.dart';
 import 'package:drift/native.dart';
+import 'package:flutter/material.dart' show ThemeMode;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -338,6 +339,87 @@ void main() {
           source: FoodLogSource.custom, sourceRef: saved.id);
       expect(second.caloriesConsumedToday, 310);
       expect(second.todayEntries.single.sourceRef, saved.id);
+    });
+  });
+
+  group('data management', () {
+    test('deleteAllData empties every table and returns to first launch',
+        () async {
+      SharedPreferences.setMockInitialValues({
+        'setup_complete': true,
+        'user_name': 'Ayşe',
+        'user_weight': 70.0,
+        'theme_mode': 'dark',
+        'favorite_recipes': ['Mercimek çorbası'],
+        'consent_version': '1',
+        'consent_at': '2026-10-01T10:00:00.000',
+      });
+      final db = memoryDb();
+      final state = await loaded(db: db);
+      await state.addFoodToMeal(MealType.lunch, menemen, 1);
+      await state.setWaterGlasses(5);
+      await state.logWeight(69.5);
+      await state.addCustomFood(const CustomFood(
+          id: '', name: 'Börek', servingLabel: '1', kcalPerServing: 300,
+          proteinG: 0, carbsG: 0, fatG: 0, category: FoodCategory.tatli));
+      final deleted = state.todayEntries.single.id;
+      await state.deleteEntry(deleted); // a soft-deleted row is wiped too
+      state.draft.name = 'Taslak';
+
+      await state.deleteAllData();
+
+      for (final table in db.allTables) {
+        expect(await db.select(table).get(), isEmpty,
+            reason: table.actualTableName);
+      }
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getKeys(), isEmpty);
+
+      expect(state.setupComplete, isFalse);
+      expect(state.user.name, '');
+      expect(state.hasConsent, isFalse);
+      expect(state.themeMode, ThemeMode.light);
+      expect(state.favoriteRecipes, isEmpty);
+      expect(state.todayEntries, isEmpty);
+      expect(state.caloriesConsumedToday, 0);
+      expect(state.waterGlasses, 0);
+      expect(state.weightHistory, isEmpty);
+      expect(state.customFoods, isEmpty);
+      expect(state.streakDays, 0);
+      expect(state.draft.name, '');
+      expect(state.hasDatabase, isTrue, reason: 'the app keeps working');
+
+      // And a migration must not resurrect the old weight on next launch.
+      final relaunched = await loaded(db: db);
+      expect(relaunched.weightHistory, isEmpty);
+    });
+
+    test('works without a database too', () async {
+      SharedPreferences.setMockInitialValues({'setup_complete': true});
+      final state = await loaded();
+      await state.addFoodToMeal(MealType.lunch, menemen, 1);
+      await state.deleteAllData();
+      expect(state.setupComplete, isFalse);
+      expect(state.todayEntries, isEmpty);
+    });
+
+    test('load purges rows soft-deleted more than 30 days ago', () async {
+      final db = memoryDb();
+      now = DateTime(2026, 9, 1, 12);
+      final old = await loaded(db: db, autoDispose: false);
+      await old.addFoodToMeal(MealType.lunch, menemen, 1);
+      await old.deleteEntry(old.todayEntries.single.id);
+      old.dispose();
+      expect(await db.select(db.foodLogEntries).get(), hasLength(1));
+
+      now = DateTime(2026, 9, 20, 12);
+      (await loaded(db: db, autoDispose: false)).dispose();
+      expect(await db.select(db.foodLogEntries).get(), hasLength(1),
+          reason: 'only 19 days old');
+
+      now = DateTime(2026, 10, 7, 12);
+      await loaded(db: db);
+      expect(await db.select(db.foodLogEntries).get(), isEmpty);
     });
   });
 }

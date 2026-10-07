@@ -32,4 +32,33 @@ class AppDatabase extends _$AppDatabase {
   MigrationStrategy get migration => MigrationStrategy(
         onCreate: (m) => m.createAll(),
       );
+
+  /// Physically deletes every row of every table ("Tüm verilerimi sil").
+  /// Soft deletion doesn't apply here: the user asked for the data to go.
+  Future<void> wipeAllData() => transaction(() async {
+        for (final table in allTables) {
+          await delete(table).go();
+        }
+      });
+
+  /// Permanently removes rows soft-deleted more than [retention] before
+  /// [now]. Run at startup; once cloud sync exists this must also wait
+  /// for the deletion to have been synced (`synced_at`).
+  Future<void> purgeSoftDeleted(
+    DateTime now, {
+    Duration retention = const Duration(days: 30),
+  }) {
+    final cutoff = now.toUtc().subtract(retention).millisecondsSinceEpoch;
+    return transaction(() async {
+      for (final table in allTables) {
+        await customUpdate(
+          'DELETE FROM ${table.actualTableName} '
+          'WHERE deleted_at IS NOT NULL AND deleted_at < ?',
+          variables: [Variable.withInt(cutoff)],
+          updates: {table},
+          updateKind: UpdateKind.delete,
+        );
+      }
+    });
+  }
 }

@@ -137,7 +137,7 @@ class AppState extends ChangeNotifier {
 
   bool setupComplete = false;
   UserProfile user = UserProfile.empty;
-  final SetupDraft draft = SetupDraft();
+  SetupDraft draft = SetupDraft();
 
   /// Allergies entered on the health & consent page (F21).
   AllergyProfile allergies = AllergyProfile.none;
@@ -364,6 +364,28 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// "Tüm verilerimi sil": physically empties every database table, clears
+  /// all preferences and resets this state to a first launch. The database
+  /// itself stays open so the app keeps working afterwards.
+  Future<void> deleteAllData() async {
+    final db = _db;
+    if (db != null) await db.wipeAllData();
+    final prefs = _prefs ?? await SharedPreferences.getInstance();
+    await prefs.clear();
+
+    // [load] only fills what the (now empty) preferences contain, so first
+    // drop everything it wouldn't overwrite.
+    user = UserProfile.empty;
+    draft = SetupDraft();
+    allergies = AllergyProfile.none;
+    consent = null;
+    customFoods = const [];
+    _loggedDates = const {};
+    _memoryDeleted.clear();
+    _waterGlasses = 0;
+    await load(db: db);
+  }
+
   /// The user's own foods, sorted by name.
   List<CustomFood> customFoods = const [];
   CustomFoodRepository? _customFoodRepo;
@@ -455,6 +477,13 @@ class AppState extends ChangeNotifier {
       // Drift opens lazily; a trivial query forces the file to be created
       // (and any open/migration error to surface) right here.
       await db.customSelect('SELECT 1').get();
+      try {
+        await db.purgeSoftDeleted(clock());
+      } catch (e, st) {
+        // Housekeeping only; never block the app on it.
+        developer.log('Purging old deleted rows failed',
+            error: e, stackTrace: st);
+      }
       _db = db;
       _foodLog = FoodLogRepository(db);
       _water = WaterRepository(db);

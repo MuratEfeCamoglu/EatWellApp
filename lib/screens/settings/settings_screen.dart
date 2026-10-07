@@ -8,8 +8,9 @@ import '../../widgets/app_back_button.dart';
 import '../../widgets/section_card.dart';
 
 /// Denge's Settings screen (project/Settings.dc.html / Settings-dark.dc.html):
-/// grouped notification/reminder/appearance/account rows plus a log-out
-/// button. Reached from the Profile tab's gear icon / "Ayarlar" row.
+/// grouped notification/reminder/appearance/account rows, "Tüm verilerimi
+/// sil" (KVKK: erase everything stored on the device) and a log-out button.
+/// Reached from the Profile tab's gear icon / "Ayarlar" row.
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
 
@@ -23,6 +24,43 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _mealReminders = true;
   bool _waterReminders = true;
   bool _weeklySummary = false;
+
+  Future<void> _confirmDeleteAll() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Tüm verilerin silinsin mi?'),
+        content: const Text(
+          'Günlük kayıtların, su ve kilo geçmişin, kendi eklediğin '
+          'yiyecekler, profilin ve ayarların bu cihazdan kalıcı olarak '
+          'silinecek. Bu işlem geri alınamaz.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Vazgeç'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: TextButton.styleFrom(
+                foregroundColor: Theme.of(context).colorScheme.error),
+            child: const Text('Sil'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
+    try {
+      await context.read<AppState>().deleteAllData();
+    } catch (_) {
+      messenger.showSnackBar(const SnackBar(
+          content: Text('Veriler silinemedi, lütfen tekrar dene.')));
+      return;
+    }
+    navigator.pushNamedAndRemoveUntil(AppRoutes.onboarding, (_) => false);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -176,6 +214,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             title: 'Gizlilik ve veriler',
                             showTopDivider: true,
                             onTap: () {},
+                          ),
+                          _NavRow(
+                            icon: Icons.delete_forever_rounded,
+                            title: 'Tüm verilerimi sil',
+                            showTopDivider: true,
+                            onTap: _confirmDeleteAll,
                           ),
                         ],
                       ),
