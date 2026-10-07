@@ -136,7 +136,7 @@ Aşama 0–6 (yerel veritabanı geçişi) tamamlandı; ayrıntılar git geçmiş
   `test(stats): seri hesabı testleri`.
 - `build/`, `.dart_tool/`, `coverage/` commit edilmez. Drift'in `.g.dart` dosyaları commit edilir.
 - Davranış değişince `README.md` içindeki özellik listesi güncellenir.
-- Bu dosyada (§7, §13.3, §13.6) bir aşama bitince ilgili kutucuklar `[x]` yapılır.
+- Bu dosyada (§7, §13.6) bir aşama bitince ilgili kutucuklar `[x]` yapılır.
 
 ## 12. Tuzaklar
 
@@ -183,42 +183,35 @@ bugünkü gibi tamamen yerel çalışmaya devam eder.
 
 ### 13.2 Sunucu şeması
 
-Migration dosyaları `supabase/migrations/` altında. Docker olmadığı için uygulama yöntemi:
+Şemanın kendisi `supabase/migrations/*.sql` içinde; her değişiklik yeni bir migration dosyasıdır,
+sunucu şeması elle değiştirilmez. Docker olmadığı için uygulama:
 `npx supabase db query --linked --project-ref <ref> -f <migration>.sql`, ardından
-`npx supabase migration repair <sürüm> --status applied --linked --project-ref <ref>`. Sunucu şeması da yerel şema gibi elle değiştirilmez, her değişiklik yeni bir
-migration dosyasıdır.
+`npx supabase migration repair <sürüm> --status applied --linked --project-ref <ref>`.
+Her migration'dan sonra `supabase/tests/rls_test.sql` (`ALL PASSED` dönmeli; tek transaction,
+`ROLLBACK` ile biter, iz bırakmaz) ve `npx supabase db advisors --type security` çalıştırılır.
+Advisors'ın `delete_my_account` için verdiği "SECURITY DEFINER" uyarısı bilinçlidir.
 
-- **Kullanıcı tabloları:** `food_log_entries`, `water_logs`, `weight_entries`, `custom_foods`.
-  Yereldeki sütunların aynısı, artı:
-  - `user_id uuid not null references auth.users on delete cascade`
-  - `server_updated_at bigint not null` (trigger doldurur, istemci yazamaz)
-  - Birincil anahtar `id` (istemcinin ürettiği UUID). `synced_at` sunucuda tutulmaz.
-- **`water_logs`:** `unique (user_id, date)`. İki cihaz aynı gün için farklı `id` üretebilir; bu
-  yüzden su `upsert_water(date, glasses, updated_at)` RPC'siyle yazılır, sunucu `(user_id, date)`
-  üzerinde son yazan kazanır kuralını uygular ve kazanan satırı (sunucudaki `id` ile) döner.
-- **`profiles`:** `user_id` birincil anahtar; ad, e-posta, cinsiyet, yaş, boy, aktivite düzeyi,
-  hedef türü, hedef kilo, haftalık tempo, kalori ve makro hedefleri, alerjiler, KVKK rıza sürümü ve
-  zamanı, `updated_at`, `server_updated_at`. Bugün `shared_preferences`'ta duran profil verisinin
-  bulut karşılığı; yerelde yine `shared_preferences`'ta kalır.
-- **Trigger'lar (her tabloda):**
-  - `server_updated_at := (extract(epoch from clock_timestamp()) * 1000)::bigint` (insert + update)
-  - Update'te `NEW.updated_at < OLD.updated_at` ise `OLD` döndür (eski yazma yok sayılır).
-- **RLS:** Her tabloda açık; `select / insert / update` için `user_id = auth.uid()`. `delete`
-  politikası **yok**: silme her zaman yumuşaktır (`deleted_at`), fiziksel silme yalnızca hesap
-  silme fonksiyonunda olur.
-- **`delete_my_account()`:** `security definer` fonksiyon; kullanıcının tüm satırlarını ve
-  `auth.users` kaydını siler. İstemci yalnızca bunu çağırır.
-- **İndeks:** her tabloda `(user_id, server_updated_at)`.
+Koddan anlaşılmayan kurallar:
+- İstemcinin fiziksel silme yetkisi yok (DELETE izni ve politikası yok); silme her zaman
+  `deleted_at` ile, fiziksel silme yalnızca `delete_my_account()` içinde.
+- Su `(user_id, date)` üzerinde tekildir ve `upsert_water` RPC'siyle yazılır; dönen satırın `id`'si
+  yerelde benimsenir (iki cihaz aynı gün için farklı `id` üretebilir).
+- `server_updated_at`'i yalnızca sunucudaki trigger yazar; eski `updated_at` taşıyan güncelleme yok
+  sayılır.
 
-### 13.3 Yerel değişiklikler (şema sürümü 2)
+### 13.3 Durum
 
-- [x] `schemaVersion = 2`. `onUpgrade` içinde `from < 2`: dört tabloya null olabilir
-      `server_updated_at INTEGER` sütunu ve `sync_state` tablosu eklenir.
-- [x] `sync_state (entity TEXT PRIMARY KEY, pulled_until INTEGER NOT NULL)`: her tablo için en
-      son çekilen `server_updated_at`. Kullanıcı verisi değil, bu yüzden `SyncColumns` taşımaz.
-- [x] `dart run drift_dev make-migrations` ile `drift_schemas/` dökümü ve 1 → 2 geçiş testi (§8).
-- [x] Açılıştaki 30 günlük temizlik (`purgeSoftDeleted`): oturum açıksa yalnızca
-      `synced_at >= deleted_at` olan, yani silinmesi buluta ulaşmış satırları siler.
+Aşama B1–B3 tamamlandı (ayrıntılar git geçmişinde). Alınan ve korunması gereken kararlar:
+- Yerel şema v2: `server_updated_at` sütunu ve `sync_state (entity, pulled_until)`; geçiş testleri
+  `test/drift/` altında. Oturum açıkken 30 günlük temizlik yalnızca buluta ulaşmış silmeleri
+  (`synced_at >= deleted_at`) kalıcı siler.
+- Bulut rızası, sağlık verisi rızasından **ayrı ve isteğe bağlıdır** (`AppState.kCloudConsentVersion`,
+  `CloudConsentScreen`); reddetmek uygulamanın hiçbir yerini kapatmaz.
+- E-posta doğrulama ve şifre sıfırlama `com.denge.denge://login-callback` deep link'iyle uygulamayı
+  açar; bu adres Supabase panelinde Authentication → URL Configuration → Redirect URLs listesinde
+  olmalı.
+- Profil senkronu `decideProfileSync` (son yazan kazanır, hedefsiz bulut profili gerçek profili
+  ezmez); kilo geçmişinin kendisi B5'te gelir.
 
 ### 13.4 Senkron algoritması (`lib/data/sync/sync_engine.dart`)
 
@@ -260,62 +253,18 @@ Bir senkron turu sırayla: **profil → gönder → çek**. Aynı anda tek tur �
 Her aşama kendi başına çalışır durumda biter (§7'deki kurallarla aynı): `flutter analyze` temiz,
 `flutter test` yeşil, hesapsız kullanım bozulmamış.
 
-#### Aşama B1: Supabase projesi ve sunucu şeması
-
-- [x] Supabase projesi (AB bölgesi), `supabase/` klasörü, `supabase/config.toml`.
-- [x] §13.2'deki tablolar, trigger'lar, RLS politikaları, `upsert_water` ve `delete_my_account`
-      migration olarak.
-- [x] `env/example.json` ve `.gitignore`'a `env/*.json` (örnek hariç).
-- [x] **Testler:** `supabase/tests/rls_test.sql`. Docker gerektirmez: gerçek projede tek bir
-      transaction içinde iki geçici kullanıcıyla çalışır ve `ROLLBACK` ile biter, iz bırakmaz.
-      `npx supabase db query --linked --project-ref <ref> -f supabase/tests/rls_test.sql` →
-      `ALL PASSED`. Kapsam: başka kullanıcının satırı okunamıyor/yazılamıyor, istemci fiziksel
-      silme yapamıyor, eski `updated_at` yok sayılıyor, aynı gün iki su yazması tek satır,
-      anon hiçbir şeye erişemiyor, `delete_my_account` yalnızca çağıranın verisini siliyor.
-      Her yeni migration'dan sonra bu betik ve `npx supabase db advisors --type security`
-      tekrar çalıştırılır. Advisors'ın `delete_my_account` için verdiği "SECURITY DEFINER"
-      uyarısı bilinçlidir (fonksiyon yalnızca `auth.uid()`'i siler).
-
-**Kabul:** İki test kullanıcısıyla, birinin verisi diğerinden görünmüyor.
-
-#### Aşama B2: Hesap (kimlik doğrulama)
-
-- [x] `supabase_flutter`; `main.dart`'ta `--dart-define` değerleri yoksa Supabase hiç başlatılmaz
-      (geliştirme ve testler hesapsız çalışır).
-- [x] `lib/data/auth.dart` (`AuthService` arayüzü, Türkçe `AuthFailure`) ve
-      `lib/data/backend/supabase_auth_service.dart`: e-posta + şifre ile kayıt, giriş, çıkış, şifre
-      sıfırlama; oturum cihazda saklanır. E-posta doğrulaması ve şifre sıfırlama bağlantıları
-      `com.denge.denge://login-callback` deep link'iyle uygulamayı açar; bu adres Supabase
-      panelinde Authentication → URL Configuration → Redirect URLs listesinde olmalı.
-- [x] Var olan `sign_up_screen.dart` ve `login_screen.dart` gerçek işlemlere bağlanır. Hatalar
-      Türkçe ("E-posta veya şifre hatalı", "Bu e-posta zaten kayıtlı", "İnternet bağlantısı yok").
-- [x] Karşılama akışında "Hesapsız devam et" seçeneği kalır.
-- [x] **Testler:** sahte auth ile ekran akışları; hata mesajları.
-
-**Kabul:** Kayıt ol → çık → giriş yap çalışıyor; hesapsız kullanım değişmedi.
-
-#### Aşama B3: Yerel şema v2, rıza ve profil senkronu
-
-- [x] §13.3'teki yerel şema değişikliği ve geçiş testi.
-- [x] Bulut rızası (§13.5): `CloudConsentScreen`, sürümü `AppState.kCloudConsentVersion`.
-      Karar: sağlık verisi rızasının (`kConsentVersion`) sürümünü artırmak yerine **ayrı ve
-      isteğe bağlı** bir bulut rızası. Böylece mevcut kullanıcılar sağlık rızasını yeniden
-      vermek zorunda kalmaz ve bulutu reddetmek uygulamanın hiçbir yerini kapatmaz. Giriş ve
-      kayıttan sonra sorulur, Ayarlar → Bulut yedekleme'den geri alınır.
-- [x] `profiles` için gönder/çek (son yazan kazanır), giriş yapınca profil ve hedefler gelir.
-      `lib/data/sync/profile_snapshot.dart` (`decideProfileSync`), `SyncBackend` arayüzü,
-      `SupabaseSyncBackend`. Sunucuya `profiles.weight_kg` eklendi (migration
-      `20261008090000`); kilo geçmişinin kendisi B5'te gelir.
-- [x] **Testler:** 1 → 2 geçişi veri kaybetmiyor; rıza yokken hiçbir istek gitmiyor.
-
-**Kabul:** Başka bir cihazda aynı hesapla giriş yapınca profil ve hedefler geliyor.
-
 #### Aşama B4: Gönderme (yedekleme)
 
-- [ ] `SyncBackend` arayüzü, `SupabaseSyncBackend` uygulaması, `SyncEngine.push()`.
-- [ ] Tetikleyiciler (§13.4) ve Ayarlar'da durum + "Şimdi eşitle".
-- [ ] İlk girişte hesapsız biriken kayıtların yüklenmesi.
-- [ ] **Testler (sahte backend, sabit saat):** kirli satırlar gidiyor ve `synced_at` doluyor; ağ
+- [x] `SyncBackend` arayüzü, `SupabaseSyncBackend` uygulaması, `SyncEngine.push()`.
+      Kararlar: `synced_at`'e gönderim anı değil **gönderilen `updated_at`** yazılır ve yalnızca satır
+      hâlâ o değerdeyse (`SyncDao.markSynced`); gönderim sırasında yapılan düzenleme kaybolmaz.
+      Sunucunun reddettiği satır (`SyncRejected`) tek başına atlanır, diğerlerini kilitlemez.
+      Tetikleme, kullanıcı tablolarının değişiklik akışından gelir (yeni yazma yolları da kapsanır);
+      gönderilecek satır yoksa ağa çıkılmaz. `row_mappers_test` sütun adlarını migration
+      dosyalarıyla karşılaştırır.
+- [x] Tetikleyiciler (§13.4) ve Ayarlar'da durum + "Şimdi eşitle".
+- [x] İlk girişte hesapsız biriken kayıtların yüklenmesi.
+- [x] **Testler (sahte backend, sabit saat):** kirli satırlar gidiyor ve `synced_at` doluyor; ağ
       hatasında hiçbir satır "gönderildi" sayılmıyor; 250 satır 3 grup halinde gidiyor; su `id`
       değişimi yerelde uygulanıyor.
 
