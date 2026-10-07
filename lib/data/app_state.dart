@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'health_consent.dart';
 import 'mock_data.dart';
 import 'models.dart';
 
@@ -104,6 +105,10 @@ class AppState extends ChangeNotifier {
   static const _kWeeklyPace = 'user_weekly_pace';
   static const _kMemberSince = 'user_member_since';
   static const _kFavoriteRecipes = 'favorite_recipes';
+  static const _kAllergies = 'user_allergies';
+  static const _kAllergyNote = 'user_allergy_note';
+  static const _kConsentVersion = 'consent_version';
+  static const _kConsentAt = 'consent_at';
 
   ThemeMode themeMode = ThemeMode.light;
   TextScaleOption textScale = TextScaleOption.normal;
@@ -113,6 +118,15 @@ class AppState extends ChangeNotifier {
   bool setupComplete = false;
   UserProfile user = UserProfile.empty;
   final SetupDraft draft = SetupDraft();
+
+  /// Allergies entered on the health & consent page (F21).
+  AllergyProfile allergies = AllergyProfile.none;
+
+  /// Null until the user ticks the explicit-consent box (F20); the setup
+  /// wizard is only reachable once this is set.
+  ConsentRecord? consent;
+
+  bool get hasConsent => consent != null;
 
   /// The pace chosen during setup, persisted separately from [draft] (which
   /// resets each session) so screens like Profile can still show an
@@ -201,6 +215,15 @@ class AppState extends ChangeNotifier {
       ..clear()
       ..addAll(prefs.getStringList(_kFavoriteRecipes) ?? const []);
 
+    allergies = AllergyProfile.decode(
+      prefs.getStringList(_kAllergies) ?? const [],
+      prefs.getString(_kAllergyNote) ?? '',
+    );
+    consent = ConsentRecord.tryParse(
+      prefs.getString(_kConsentVersion),
+      prefs.getString(_kConsentAt),
+    );
+
     setupComplete = prefs.getBool(_kSetupComplete) ?? false;
     weeklyPaceKg = prefs.getDouble(_kWeeklyPace) ?? 0.5;
     final memberSinceStr = prefs.getString(_kMemberSince);
@@ -249,6 +272,26 @@ class AppState extends ChangeNotifier {
     locale = value;
     notifyListeners();
     _prefs?.setString(_kLocale, value.languageCode);
+  }
+
+  /// Stores the allergy answers and the explicit consent given at [now]
+  /// (F20, F21). Device-only for now; moves to the cloud profile in Aşama 3.
+  Future<void> saveHealthConsent({
+    required AllergyProfile allergies,
+    required DateTime now,
+  }) async {
+    this.allergies = allergies;
+    consent = ConsentRecord(version: kConsentVersion, acceptedAt: now);
+    notifyListeners();
+
+    final prefs = _prefs ?? await SharedPreferences.getInstance();
+    _prefs = prefs;
+    await Future.wait([
+      prefs.setStringList(_kAllergies, allergies.encodeAllergens()),
+      prefs.setString(_kAllergyNote, allergies.otherNote),
+      prefs.setString(_kConsentVersion, consent!.version),
+      prefs.setString(_kConsentAt, now.toIso8601String()),
+    ]);
   }
 
   /// Basal metabolic rate via the Mifflin-St Jeor equation.

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'data/models.dart';
+import 'screens/auth/health_consent_screen.dart';
 import 'screens/auth/login_screen.dart';
 import 'screens/auth/sign_up_screen.dart';
 import 'screens/diary/barcode_screen.dart';
@@ -27,6 +28,7 @@ class AppRoutes {
   static const onboarding = '/onboarding';
   static const signUp = '/sign-up';
   static const login = '/login';
+  static const healthConsent = '/health-consent';
   static const setupGender = '/setup/gender';
   static const setupAge = '/setup/age';
   static const setupHeight = '/setup/height';
@@ -47,6 +49,7 @@ class AppRoutes {
         onboarding: (_) => const OnboardingScreen(),
         signUp: (_) => const SignUpScreen(),
         login: (_) => const LoginScreen(),
+        healthConsent: (_) => const HealthConsentScreen(),
         setupGender: (_) => const SetupGenderScreen(),
         setupAge: (_) => const SetupAgeScreen(),
         setupHeight: (_) => const SetupHeightScreen(),

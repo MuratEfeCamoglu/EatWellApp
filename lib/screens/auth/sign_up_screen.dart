@@ -32,7 +32,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
       final draft = AppState.instance.draft;
       draft.name = _nameController.text.trim();
       draft.email = _emailController.text.trim();
-      Navigator.of(context).pushNamed(AppRoutes.setupGender);
+      Navigator.of(context).pushNamed(AppRoutes.healthConsent);
     }
   }
 

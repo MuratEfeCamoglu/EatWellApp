@@ -30,9 +30,13 @@ class _LoginScreenState extends State<LoginScreen> {
       // There's no real backend to authenticate against — if this device
       // never finished setup there's nothing to "log back into", so route
       // there instead of a blank main shell.
-      final next = AppState.instance.setupComplete
+      // The wizard also requires KVKK consent (F20) first.
+      final state = AppState.instance;
+      final next = state.setupComplete
           ? AppRoutes.main
-          : AppRoutes.setupGender;
+          : state.hasConsent
+              ? AppRoutes.setupGender
+              : AppRoutes.healthConsent;
       Navigator.of(context).pushNamedAndRemoveUntil(next, (route) => false);
     }
   }
