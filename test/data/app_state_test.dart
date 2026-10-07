@@ -1,4 +1,5 @@
 import 'package:denge/data/app_state.dart';
+import 'package:denge/data/custom_food.dart';
 import 'package:denge/data/db/app_database.dart';
 import 'package:denge/data/models.dart';
 import 'package:drift/native.dart';
@@ -288,6 +289,55 @@ void main() {
       await state.addFoodToMeal(MealType.lunch, menemen, 1);
       expect(state.streakDays, 1);
       expect(state.loggedDaysCount, 1);
+    });
+  });
+
+  group('custom foods', () {
+    const draft = CustomFood(
+      id: '',
+      name: 'Annemin böreği',
+      servingLabel: '1 dilim',
+      kcalPerServing: 310,
+      proteinG: 9,
+      carbsG: 30,
+      fatG: 17,
+      category: FoodCategory.hamurIsi,
+      barcode: '8690000000001',
+    );
+
+    for (final withDb in [true, false]) {
+      final label = withDb ? 'database' : 'in memory';
+
+      test('add, find by barcode, update and delete ($label)', () async {
+        final state = await loaded(db: withDb ? memoryDb() : null);
+        final saved = await state.addCustomFood(draft);
+        expect(saved.id, isNotEmpty);
+        expect(state.customFoods.map((f) => f.name), ['Annemin böreği']);
+        expect(state.customFoodForBarcode('8690000000001')?.id, saved.id);
+        expect(state.customFoodForBarcode('000'), isNull);
+
+        await state.updateCustomFood(saved.copyWith(kcalPerServing: 300));
+        expect(state.customFoods.single.kcalPerServing, 300);
+
+        await state.deleteCustomFood(saved.id);
+        expect(state.customFoods, isEmpty);
+        expect(state.customFoodForBarcode('8690000000001'), isNull);
+      });
+    }
+
+    test('saved foods are there after a reload and can be logged', () async {
+      final db = memoryDb();
+      final first = await loaded(db: db, autoDispose: false);
+      final saved = await first.addCustomFood(draft);
+      first.dispose();
+
+      final second = await loaded(db: db);
+      expect(second.customFoods.single.id, saved.id);
+      await second.addFoodToMeal(
+          MealType.lunch, second.customFoods.single.asFoodItem, 1,
+          source: FoodLogSource.custom, sourceRef: saved.id);
+      expect(second.caloriesConsumedToday, 310);
+      expect(second.todayEntries.single.sourceRef, saved.id);
     });
   });
 }

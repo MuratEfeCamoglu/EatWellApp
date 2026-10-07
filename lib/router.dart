@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 
+import 'data/custom_food.dart';
 import 'data/models.dart';
 import 'screens/auth/health_consent_screen.dart';
 import 'screens/auth/login_screen.dart';
 import 'screens/auth/sign_up_screen.dart';
 import 'screens/diary/barcode_screen.dart';
+import 'screens/food/custom_food_screen.dart';
 import 'screens/food/food_detail_screen.dart';
 import 'screens/main_shell.dart';
 import 'screens/onboarding/onboarding_screen.dart';
@@ -41,6 +43,7 @@ class AppRoutes {
   static const barcode = '/barcode';
   static const foodDetail = '/food-detail';
   static const recipeDetail = '/recipe-detail';
+  static const customFood = '/custom-food';
   static const settings = '/settings';
   static const languageAccessibility = '/settings/language-accessibility';
 
@@ -78,6 +81,25 @@ class AppRoutes {
         initialMeal: initialMeal,
         source: source,
         sourceRef: sourceRef,
+      ),
+    );
+  }
+
+  /// Opens the "add your own food" form, optionally pre-filled with the
+  /// search text or a scanned [barcode]; with [existing] it edits that food.
+  static Route<void> pushCustomFood({
+    String initialName = '',
+    String? barcode,
+    MealType? initialMeal,
+    CustomFood? existing,
+  }) {
+    return MaterialPageRoute(
+      settings: const RouteSettings(name: customFood),
+      builder: (_) => CustomFoodScreen(
+        initialName: initialName,
+        barcode: barcode,
+        initialMeal: initialMeal,
+        existing: existing,
       ),
     );
   }

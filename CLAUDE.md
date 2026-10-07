@@ -316,16 +316,16 @@ uygulama açılıyor. Bir aşama bitmeden sonrakine geçme.
 
 ### Aşama 5: Kendi yiyeceğini ekle
 
-- [ ] `CustomFoodDao` / `CustomFoodRepository`: ekle, güncelle, sil (yumuşak), `watchAll()`.
-- [ ] Yeni ekran `lib/screens/food/custom_food_screen.dart` (rota `AppRoutes`'a eklenir):
+- [x] `CustomFoodDao` / `CustomFoodRepository`: ekle, güncelle, sil (yumuşak), `watchAll()`.
+- [x] Yeni ekran `lib/screens/food/custom_food_screen.dart` (rota `AppRoutes`'a eklenir):
       ad, marka, porsiyon etiketi, kcal, protein, karb, yağ, kategori. Doğrulama: ad zorunlu,
       sayılar 0 veya pozitif, kcal ≤ 5000.
-- [ ] `search_screen.dart`: "Yiyeceği kendin ekle" butonundaki "Bu özellik yakında" SnackBar'ı
+- [x] `search_screen.dart`: "Yiyeceği kendin ekle" butonundaki "Bu özellik yakında" SnackBar'ı
       kaldırılır ve buton yeni ekranı açar (arama metni ad alanına önceden doldurulur).
-- [ ] Arama sonuçlarında kullanıcının kendi yiyecekleri katalogla birlikte, **en üstte** listelenir.
-- [ ] Barkod bulunamazsa "Bu ürünü kendin ekle" seçeneği barkod numarasıyla birlikte aynı ekranı açar.
+- [x] Arama sonuçlarında kullanıcının kendi yiyecekleri katalogla birlikte, **en üstte** listelenir.
+- [x] Barkod bulunamazsa "Bu ürünü kendin ekle" seçeneği barkod numarasıyla birlikte aynı ekranı açar.
       Sonraki taramada bu barkod önce `custom_foods` içinde aranır.
-- [ ] **Testler:** doğrulama kuralları, aramada kendi yiyeceğin çıkması, barkod eşleşmesi.
+- [x] **Testler:** doğrulama kuralları, aramada kendi yiyeceğin çıkması, barkod eşleşmesi.
 
 **Kabul:** Katalogda olmayan bir yiyecek eklenip günlüğe kaydedilebiliyor ve sonraki aramalarda çıkıyor.
 

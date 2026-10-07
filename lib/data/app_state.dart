@@ -4,11 +4,13 @@ import 'dart:developer' as developer;
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'custom_food.dart';
 import 'db/app_database.dart';
 import 'db/date_key.dart';
 import 'health_consent.dart';
 import 'mock_data.dart';
 import 'models.dart';
+import 'repositories/custom_food_repository.dart';
 import 'repositories/food_log_repository.dart';
 import 'repositories/water_repository.dart';
 import 'repositories/weight_repository.dart';
@@ -358,7 +360,77 @@ class AppState extends ChangeNotifier {
       );
     }
     await _loadWeights(prefs);
+    await _loadCustomFoods();
     notifyListeners();
+  }
+
+  /// The user's own foods, sorted by name.
+  List<CustomFood> customFoods = const [];
+  CustomFoodRepository? _customFoodRepo;
+  int _memoryCustomIds = 0;
+
+  Future<void> _loadCustomFoods() async {
+    final repo = _customFoodRepo;
+    if (repo == null) return;
+    try {
+      customFoods = List.unmodifiable(await repo.all());
+    } catch (e, st) {
+      developer.log('Loading custom foods failed', error: e, stackTrace: st);
+    }
+  }
+
+  void _setMemoryCustomFoods(List<CustomFood> foods) {
+    customFoods = List.unmodifiable(
+        [...foods]..sort((a, b) => a.name.compareTo(b.name)));
+  }
+
+  /// Saves a new own food and returns it with its id. Throws on failure.
+  Future<CustomFood> addCustomFood(CustomFood draft) async {
+    final repo = _customFoodRepo;
+    final CustomFood saved;
+    if (repo == null) {
+      saved = draft.copyWith(id: 'mem-custom-${_memoryCustomIds++}');
+      _setMemoryCustomFoods([...customFoods, saved]);
+    } else {
+      saved = await repo.add(draft, clock());
+      customFoods = List.unmodifiable(await repo.all());
+    }
+    notifyListeners();
+    return saved;
+  }
+
+  Future<void> updateCustomFood(CustomFood food) async {
+    final repo = _customFoodRepo;
+    if (repo == null) {
+      _setMemoryCustomFoods(
+          [for (final f in customFoods) f.id == food.id ? food : f]);
+    } else {
+      await repo.update(food, clock());
+      customFoods = List.unmodifiable(await repo.all());
+    }
+    notifyListeners();
+  }
+
+  /// Soft-deletes an own food; diary entries already logged keep their
+  /// copied values.
+  Future<void> deleteCustomFood(String id) async {
+    final repo = _customFoodRepo;
+    if (repo == null) {
+      _setMemoryCustomFoods([for (final f in customFoods) if (f.id != id) f]);
+    } else {
+      await repo.delete(id, clock());
+      customFoods = List.unmodifiable(await repo.all());
+    }
+    notifyListeners();
+  }
+
+  /// The own food saved for a scanned [barcode], checked before the online
+  /// product lookup.
+  CustomFood? customFoodForBarcode(String barcode) {
+    for (final f in customFoods) {
+      if (f.barcode == barcode) return f;
+    }
+    return null;
   }
 
   Future<void> _loadWeights(SharedPreferences prefs) async {
@@ -387,6 +459,7 @@ class AppState extends ChangeNotifier {
       _foodLog = FoodLogRepository(db);
       _water = WaterRepository(db);
       _weights = WeightRepository(db);
+      _customFoodRepo = CustomFoodRepository(db);
       storageError = null;
     } catch (e, st) {
       developer.log('Database open failed', error: e, stackTrace: st);
@@ -394,6 +467,7 @@ class AppState extends ChangeNotifier {
       _foodLog = null;
       _water = null;
       _weights = null;
+      _customFoodRepo = null;
       storageError =
           'Kayıtların saklandığı veritabanı açılamadı. Uygulamayı kullanmaya '
           'devam edebilirsin ama bu oturumdaki kayıtlar kaydedilmeyecek.';
