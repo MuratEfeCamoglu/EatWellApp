@@ -38,6 +38,21 @@ class FoodLogRepository {
     return entry;
   }
 
+  Future<void> delete(String id, DateTime now) =>
+      _db.foodLogDao.softDelete(id, now);
+
+  Future<void> restore(String id, DateTime now) =>
+      _db.foodLogDao.restore(id, now);
+
+  /// Applies a new serving count and/or meal in one transaction.
+  Future<void> update(String id, DateTime now,
+      {double? amount, MealType? meal}) {
+    return _db.transaction(() async {
+      if (amount != null) await _db.foodLogDao.updateAmount(id, amount, now);
+      if (meal != null) await _db.foodLogDao.updateMeal(id, meal.name, now);
+    });
+  }
+
   Stream<List<FoodLogEntry>> watchDate(String date) => _db.foodLogDao
       .watchEntriesForDate(date)
       .map((rows) => rows.map(_toModel).toList());

@@ -269,14 +269,14 @@ uygulama açılıyor. Bir aşama bitmeden sonrakine geçme.
 
 ### Aşama 2: Kayıt silme ve düzenleme
 
-- [ ] `FoodLogDao`: `softDelete(id, now)`, `restore(id, now)` (geri al için), `updateAmount(id, amount, now)`.
+- [x] `FoodLogDao`: `softDelete(id, now)`, `restore(id, now)` (geri al için), `updateAmount(id, amount, now)`.
       Miktar değişince `kcal` ve makrolar orantılı olarak yeniden hesaplanır.
-- [ ] Günlük ekranında öğün kartı, içindeki yiyecekleri **ayrı satırlar** olarak listeler
+- [x] Günlük ekranında öğün kartı, içindeki yiyecekleri **ayrı satırlar** olarak listeler
       (ad, porsiyon, kcal).
-- [ ] Satırı sola kaydır → sil → SnackBar'da **"Geri al"** (4 sn). Geri al `restore` çağırır.
-- [ ] Satıra dokun → porsiyon düzenleme (food detail ekranındaki porsiyon seçiciyle aynı adımlar),
+- [x] Satırı sola kaydır → sil → SnackBar'da **"Geri al"** (4 sn). Geri al `restore` çağırır.
+- [x] Satıra dokun → porsiyon düzenleme (food detail ekranındaki porsiyon seçiciyle aynı adımlar),
       öğünü değiştirme seçeneği.
-- [ ] **Testler:** silinen kayıt toplamlara girmez, geri alınca geri gelir, miktar güncellemesi makroları doğru ölçekler.
+- [x] **Testler:** silinen kayıt toplamlara girmez, geri alınca geri gelir, miktar güncellemesi makroları doğru ölçekler.
 
 **Kabul:** Yanlış eklenen bir yiyecek silinebiliyor ve kalori anında düşüyor. Geri al çalışıyor.
 

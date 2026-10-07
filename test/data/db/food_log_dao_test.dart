@@ -83,4 +83,58 @@ void main() {
             .datesWithEntries(from: '2026-10-01', to: '2026-10-06'),
         {'2026-10-05'});
   });
+
+  group('edit', () {
+    final now = DateTime.utc(2026, 10, 7, 12);
+    final nowMs = now.millisecondsSinceEpoch;
+
+    test('softDelete hides the row, restore brings it back', () async {
+      await db.foodLogDao.insertEntry(row('a', '2026-10-07'));
+      await db.foodLogDao.softDelete('a', now);
+      expect(await db.foodLogDao.entriesForDate('2026-10-07'), isEmpty);
+      expect(await db.foodLogDao.datesWithEntries(), isEmpty);
+
+      final deleted = await (db.select(db.foodLogEntries)
+            ..where((t) => t.id.equals('a')))
+          .getSingle();
+      expect(deleted.deletedAt, nowMs);
+      expect(deleted.updatedAt, nowMs);
+
+      await db.foodLogDao.restore('a', now.add(const Duration(seconds: 3)));
+      final restored =
+          (await db.foodLogDao.entriesForDate('2026-10-07')).single;
+      expect(restored.deletedAt, isNull);
+      expect(restored.updatedAt, nowMs + 3000);
+    });
+
+    test('updateAmount rescales kcal and macros proportionally', () async {
+      await db.foodLogDao.insertEntry(row('a', '2026-10-07'));
+      // row(): amount 1, 100 kcal, P1 C2 F3.
+      await db.foodLogDao.updateAmount('a', 2.5, now);
+      final r = (await db.foodLogDao.entriesForDate('2026-10-07')).single;
+      expect(r.amount, 2.5);
+      expect(r.kcal, 250);
+      expect(r.proteinG, closeTo(2.5, 1e-9));
+      expect(r.carbsG, closeTo(5, 1e-9));
+      expect(r.fatG, closeTo(7.5, 1e-9));
+      expect(r.updatedAt, nowMs);
+    });
+
+    test('updateAmount scales from the current amount, not from 1', () async {
+      await db.foodLogDao.insertEntry(row('a', '2026-10-07'));
+      await db.foodLogDao.updateAmount('a', 2, now);
+      await db.foodLogDao.updateAmount('a', 0.5, now);
+      final r = (await db.foodLogDao.entriesForDate('2026-10-07')).single;
+      expect(r.kcal, 50);
+      expect(r.fatG, closeTo(1.5, 1e-9));
+    });
+
+    test('updateMeal moves the entry to another meal', () async {
+      await db.foodLogDao.insertEntry(row('a', '2026-10-07'));
+      await db.foodLogDao.updateMeal('a', 'dinner', now);
+      final r = (await db.foodLogDao.entriesForDate('2026-10-07')).single;
+      expect(r.meal, 'dinner');
+      expect(r.updatedAt, nowMs);
+    });
+  });
 }

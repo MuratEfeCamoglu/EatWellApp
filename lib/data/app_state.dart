@@ -560,10 +560,72 @@ class AppState extends ChangeNotifier {
         source: source, sourceRef: sourceRef);
     final repo = _foodLog;
     if (repo == null) {
-      _setTodayEntries([...todayEntries, draft]);
+      _setTodayEntries([
+        ...todayEntries,
+        draft.copyWith(id: 'mem-${_memoryIds++}'),
+      ]);
     } else {
       await repo.add(draft, now);
-      _setTodayEntries(await repo.entriesForDate(_todayKey));
+      await _refreshToday(repo);
+    }
+    notifyListeners();
+  }
+
+  /// In-memory fallback (no database): ids for new entries and the
+  /// deleted ones kept around so "Geri al" can still restore them.
+  int _memoryIds = 0;
+  final Map<String, (int, FoodLogEntry)> _memoryDeleted = {};
+
+  Future<void> _refreshToday(FoodLogRepository repo) async {
+    _setTodayEntries(await repo.entriesForDate(_todayKey));
+  }
+
+  /// Soft-deletes a diary entry of any day. Throws if the write fails.
+  Future<void> deleteEntry(String id) async {
+    final repo = _foodLog;
+    if (repo == null) {
+      final index = todayEntries.indexWhere((e) => e.id == id);
+      if (index == -1) return;
+      _memoryDeleted[id] = (index, todayEntries[index]);
+      _setTodayEntries([...todayEntries]..removeAt(index));
+    } else {
+      await repo.delete(id, clock());
+      await _refreshToday(repo);
+    }
+    notifyListeners();
+  }
+
+  /// Undoes [deleteEntry].
+  Future<void> restoreEntry(String id) async {
+    final repo = _foodLog;
+    if (repo == null) {
+      final removed = _memoryDeleted.remove(id);
+      if (removed == null) return;
+      final (index, entry) = removed;
+      _setTodayEntries([...todayEntries]
+        ..insert(index.clamp(0, todayEntries.length), entry));
+    } else {
+      await repo.restore(id, clock());
+      await _refreshToday(repo);
+    }
+    notifyListeners();
+  }
+
+  /// Changes an entry's serving count (kcal/macros scale with it) and/or
+  /// moves it to another meal. Throws if the write fails.
+  Future<void> updateEntry(String id, {double? amount, MealType? meal}) async {
+    final repo = _foodLog;
+    if (repo == null) {
+      _setTodayEntries([
+        for (final e in todayEntries)
+          if (e.id != id)
+            e
+          else
+            (amount == null ? e : e.withAmount(amount)).copyWith(meal: meal),
+      ]);
+    } else {
+      await repo.update(id, clock(), amount: amount, meal: meal);
+      await _refreshToday(repo);
     }
     notifyListeners();
   }

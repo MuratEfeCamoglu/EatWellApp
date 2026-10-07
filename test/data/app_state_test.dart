@@ -118,4 +118,41 @@ void main() {
       expect(state.todayEntries.single.date, '2026-10-08');
     });
   });
+
+  group('edit diary', () {
+    for (final withDb in [true, false]) {
+      final label = withDb ? 'database' : 'in memory';
+
+      test('deleted entry leaves the totals, undo brings it back ($label)',
+          () async {
+        final state = await loaded(db: withDb ? memoryDb() : null);
+        await state.addFoodToMeal(MealType.lunch, menemen, 1);
+        await state.addFoodToMeal(MealType.lunch, menemen, 2);
+        expect(state.caloriesConsumedToday, 360);
+
+        final first = state.todayEntries.first;
+        await state.deleteEntry(first.id);
+        expect(state.caloriesConsumedToday, 240);
+        expect(state.todayEntries, hasLength(1));
+
+        await state.restoreEntry(first.id);
+        expect(state.caloriesConsumedToday, 360);
+        expect(state.todayEntries.first.id, first.id);
+      });
+
+      test('updating amount and meal rescales macros ($label)', () async {
+        final state = await loaded(db: withDb ? memoryDb() : null);
+        await state.addFoodToMeal(MealType.lunch, menemen, 1);
+        final id = state.todayEntries.single.id;
+
+        await state.updateEntry(id, amount: 1.5, meal: MealType.dinner);
+        final e = state.todayEntries.single;
+        expect(e.amount, 1.5);
+        expect(e.meal, MealType.dinner);
+        expect(e.kcal, 180);
+        expect(state.proteinConsumedG, closeTo(9.75, 1e-9));
+        expect(state.todaySummary.meal(MealType.lunch).entries, isEmpty);
+      });
+    }
+  });
 }

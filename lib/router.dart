@@ -82,6 +82,15 @@ class AppRoutes {
     );
   }
 
+  /// Opens the food detail screen in edit mode for a diary entry.
+  static Route<void> pushEditEntry(FoodLogEntry entry) {
+    return MaterialPageRoute(
+      settings: const RouteSettings(name: foodDetail),
+      builder: (_) =>
+          FoodDetailScreen(food: entry.asServingFood, editing: entry),
+    );
+  }
+
   /// Pushes the food search screen, optionally pre-targeting [initialMeal]
   /// (e.g. tapping "+" on the Diary's breakfast card) instead of always
   /// defaulting to whichever meal fits the current time of day.

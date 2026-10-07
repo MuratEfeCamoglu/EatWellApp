@@ -318,19 +318,52 @@ class FoodLogEntry {
   /// When it was added (UTC); orders entries within a day.
   final DateTime loggedAt;
 
-  FoodLogEntry copyWith({String? id}) {
+  /// One serving's worth as a [FoodItem], so the food detail screen's
+  /// serving picker can edit this entry.
+  FoodItem get asServingFood => FoodItem(
+        name: foodName,
+        brand: brand,
+        caloriesPer100g: (kcal / amount).round(),
+        proteinG: proteinG / amount,
+        carbsG: carbsG / amount,
+        fatG: fatG / amount,
+        servingLabel: servingLabel,
+      );
+
+  /// This entry with [newAmount] servings; kcal and macros scale by
+  /// `newAmount / amount`, mirroring `FoodLogDao.updateAmount`.
+  FoodLogEntry withAmount(double newAmount) {
+    final factor = newAmount / amount;
+    return copyWith(
+      amount: newAmount,
+      kcal: (kcal * factor).round(),
+      proteinG: proteinG * factor,
+      carbsG: carbsG * factor,
+      fatG: fatG * factor,
+    );
+  }
+
+  FoodLogEntry copyWith({
+    String? id,
+    MealType? meal,
+    double? amount,
+    int? kcal,
+    double? proteinG,
+    double? carbsG,
+    double? fatG,
+  }) {
     return FoodLogEntry(
       id: id ?? this.id,
       date: date,
-      meal: meal,
+      meal: meal ?? this.meal,
       foodName: foodName,
       brand: brand,
       servingLabel: servingLabel,
-      amount: amount,
-      kcal: kcal,
-      proteinG: proteinG,
-      carbsG: carbsG,
-      fatG: fatG,
+      amount: amount ?? this.amount,
+      kcal: kcal ?? this.kcal,
+      proteinG: proteinG ?? this.proteinG,
+      carbsG: carbsG ?? this.carbsG,
+      fatG: fatG ?? this.fatG,
       source: source,
       sourceRef: sourceRef,
       loggedAt: loggedAt,

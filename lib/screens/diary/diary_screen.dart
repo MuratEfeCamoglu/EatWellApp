@@ -63,6 +63,57 @@ class _DiaryScreenState extends State<DiaryScreen> {
   DateTime? _streamDay;
   Stream<List<FoodLogEntry>>? _dayStream;
 
+  /// Rows swiped away but not yet gone from the data source; hidden right
+  /// away so the [Dismissible] leaves the tree before the write finishes.
+  final Set<String> _hiddenIds = {};
+
+  static String _fmtAmount(double x) {
+    final rounded = (x * 10).round() / 10;
+    if (rounded == rounded.roundToDouble()) return rounded.toInt().toString();
+    return rounded.toStringAsFixed(1).replaceAll('.', ',');
+  }
+
+  Future<void> _delete(FoodLogEntry entry) async {
+    final state = context.read<AppState>();
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _hiddenIds.add(entry.id));
+    try {
+      await state.deleteEntry(entry.id);
+    } catch (_) {
+      if (mounted) setState(() => _hiddenIds.remove(entry.id));
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(const SnackBar(
+            content: Text('Silinemedi, lütfen tekrar dene.')));
+      return;
+    }
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(
+        content: Text('${entry.foodName} silindi'),
+        duration: const Duration(seconds: 4),
+        // Auto-hide even though it has an action (Flutter keeps action
+        // SnackBars up by default).
+        persist: false,
+        action: SnackBarAction(
+          label: 'Geri al',
+          onPressed: () => _restore(entry, state, messenger),
+        ),
+      ));
+  }
+
+  Future<void> _restore(FoodLogEntry entry, AppState state,
+      ScaffoldMessengerState messenger) async {
+    try {
+      await state.restoreEntry(entry.id);
+    } catch (_) {
+      messenger.showSnackBar(const SnackBar(
+          content: Text('Geri alınamadı, lütfen tekrar dene.')));
+      return;
+    }
+    if (mounted) setState(() => _hiddenIds.remove(entry.id));
+  }
+
   Stream<List<FoodLogEntry>> _entriesFor(AppState state, DateTime day) {
     if (_streamDay != day || _dayStream == null) {
       _streamDay = day;
@@ -135,7 +186,12 @@ class _DiaryScreenState extends State<DiaryScreen> {
               _buildDayStrip(context),
               const SizedBox(height: 16),
               if (isToday)
-                dayContent(state.todaySummary)
+                dayContent(_hiddenIds.isEmpty
+                    ? state.todaySummary
+                    : DailySummary.fromEntries([
+                        for (final e in state.todayEntries)
+                          if (!_hiddenIds.contains(e.id)) e,
+                      ]))
               else
                 StreamBuilder<List<FoodLogEntry>>(
                   stream: _entriesFor(state, _selectedDate),
@@ -147,7 +203,10 @@ class _DiaryScreenState extends State<DiaryScreen> {
                         child: Center(child: CircularProgressIndicator()),
                       );
                     }
-                    return dayContent(DailySummary.fromEntries(entries));
+                    return dayContent(DailySummary.fromEntries([
+                      for (final e in entries)
+                        if (!_hiddenIds.contains(e.id)) e,
+                    ]));
                   },
                 ),
             ],
@@ -363,6 +422,58 @@ class _DiaryScreenState extends State<DiaryScreen> {
     );
   }
 
+  /// One logged food: swipe left to delete (with undo), tap to edit its
+  /// serving or meal.
+  Widget _buildEntryRow(
+      BuildContext context, ThemeData theme, FoodLogEntry entry) {
+    final scheme = theme.colorScheme;
+    return Dismissible(
+      key: ValueKey(entry.id),
+      direction: DismissDirection.endToStart,
+      onDismissed: (_) => _delete(entry),
+      background: Container(
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: 16),
+        decoration: BoxDecoration(
+          color: scheme.errorContainer,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Icon(Icons.delete_outline_rounded,
+            color: scheme.onErrorContainer, semanticLabel: 'Sil'),
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () =>
+            Navigator.of(context).push(AppRoutes.pushEditEntry(entry)),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(entry.foodName,
+                        style: theme.textTheme.bodyLarge
+                            ?.copyWith(fontWeight: FontWeight.w700)),
+                    Text(
+                      '${_fmtAmount(entry.amount)} × ${entry.servingLabel}',
+                      style: theme.textTheme.bodySmall,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              Text('${entry.kcal} kcal',
+                  style: theme.textTheme.bodyMedium
+                      ?.copyWith(fontWeight: FontWeight.w800)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _macroDot(Color color, String label, ThemeData theme) {
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -451,12 +562,16 @@ class _DiaryScreenState extends State<DiaryScreen> {
           if (meal.entries.isNotEmpty) ...[
             const SizedBox(height: 12),
             Container(
-              padding: const EdgeInsets.only(top: 12),
+              padding: const EdgeInsets.only(top: 4),
               decoration: BoxDecoration(
                 border: Border(top: BorderSide(color: colors.divider)),
               ),
-              child: Text(meal.entries.map((e) => e.foodName).join(', '),
-                  style: theme.textTheme.bodyMedium),
+              child: Column(
+                children: [
+                  for (final entry in meal.entries)
+                    _buildEntryRow(context, theme, entry),
+                ],
+              ),
             ),
           ] else ...[
             const SizedBox(height: 16),

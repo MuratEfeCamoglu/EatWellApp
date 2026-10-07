@@ -89,4 +89,81 @@ void main() {
 
     await tearDownDb(tester);
   });
+
+  group('editing today (in memory)', () {
+    late AppState memState;
+
+    Future<void> pumpWithEntry(WidgetTester tester) async {
+      memState = AppState.forTesting()..clock = () => DateTime(2026, 10, 7, 9);
+      await tester.runAsync(() async {
+        await memState.load();
+        await memState.addFoodToMeal(MealType.breakfast, menemen, 1);
+      });
+      await tester.pumpWidget(
+        ChangeNotifierProvider.value(
+          value: memState,
+          child:
+              MaterialApp(theme: AppTheme.light(), home: const DiaryScreen()),
+        ),
+      );
+      await tester.pump();
+    }
+
+    testWidgets('each food is its own row with serving and kcal',
+        (tester) async {
+      await pumpWithEntry(tester);
+      expect(find.text('Menemen'), findsOneWidget);
+      expect(find.text('1 × 1 porsiyon (200 g)'), findsOneWidget);
+      expect(find.text('120 kcal'), findsOneWidget);
+    });
+
+    testWidgets('swipe deletes the row, Geri al restores it', (tester) async {
+      await pumpWithEntry(tester);
+      await tester.drag(find.text('Menemen'), const Offset(-600, 0));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Menemen'), findsNothing);
+      expect(memState.caloriesConsumedToday, 0);
+      expect(find.text('Menemen silindi'), findsOneWidget);
+
+      await tester.tap(find.text('Geri al'));
+      await tester.pumpAndSettle();
+      expect(find.text('Menemen'), findsOneWidget);
+      expect(memState.caloriesConsumedToday, 120);
+    });
+
+    testWidgets('the undo SnackBar goes away after 4 seconds', (tester) async {
+      await pumpWithEntry(tester);
+      await tester.drag(find.text('Menemen'), const Offset(-600, 0));
+      await tester.pumpAndSettle();
+      expect(find.text('Geri al'), findsOneWidget);
+      await tester.pump(const Duration(seconds: 4));
+      await tester.pumpAndSettle();
+      expect(find.text('Geri al'), findsNothing);
+    });
+
+    testWidgets('tapping a row edits its serving and meal', (tester) async {
+      await pumpWithEntry(tester);
+      await tester.tap(find.text('Menemen'));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('Kaydet'), findsOneWidget);
+      await tester.tap(find.byIcon(Icons.add_rounded).last);
+      await tester.pump();
+      await tester.ensureVisible(find.text('Akşam'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Akşam'));
+      await tester.pump();
+      expect(find.text('Kaydet · 180 kcal'), findsOneWidget);
+
+      await tester.tap(find.text('Kaydet · 180 kcal'));
+      await tester.pumpAndSettle();
+
+      final e = memState.todayEntries.single;
+      expect(e.amount, 1.5);
+      expect(e.meal, MealType.dinner);
+      expect(memState.caloriesConsumedToday, 180);
+      expect(find.byType(DiaryScreen), findsOneWidget);
+    });
+  });
 }

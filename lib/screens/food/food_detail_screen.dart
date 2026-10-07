@@ -21,7 +21,12 @@ class FoodDetailScreen extends StatefulWidget {
     this.initialMeal,
     this.source = FoodLogSource.catalog,
     this.sourceRef,
+    this.editing,
   });
+
+  /// When set, the screen edits this diary entry (same serving stepper and
+  /// meal chips) instead of adding a new one.
+  final FoodLogEntry? editing;
 
   final FoodItem food;
 
@@ -53,8 +58,9 @@ const _mealCtas = {
 };
 
 class _FoodDetailScreenState extends State<FoodDetailScreen> {
-  double _amount = 1;
-  late MealType _meal = widget.initialMeal ?? defaultMealForNow();
+  late double _amount = widget.editing?.amount ?? 1;
+  late MealType _meal =
+      widget.editing?.meal ?? widget.initialMeal ?? defaultMealForNow();
   bool _isFavorite = true;
 
   void _dec() => setState(() => _amount = math.max(0.5, _amount - 0.5));
@@ -94,17 +100,42 @@ class _FoodDetailScreenState extends State<FoodDetailScreen> {
     if (mounted) navigator.pop();
   }
 
+  Future<void> _save(FoodLogEntry editing) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
+    try {
+      await context
+          .read<AppState>()
+          .updateEntry(editing.id, amount: _amount, meal: _meal);
+    } catch (_) {
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(const SnackBar(
+            content: Text('Değişiklik kaydedilemedi, lütfen tekrar dene.')));
+      return;
+    }
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+          SnackBar(content: Text('${editing.foodName} güncellendi')));
+    if (mounted) navigator.pop();
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final colors = context.dengeColors;
     final food = widget.food;
+    final editing = widget.editing;
 
-    final kcal = (food.caloriesPer100g * _amount).round();
-    final protein = food.proteinG * _amount;
-    final carbs = food.carbsG * _amount;
-    final fat = food.fatG * _amount;
+    // An edited entry scales from its own stored totals (exactly what the
+    // database does on save), not from the rounded per-serving value.
+    final edited = editing?.withAmount(_amount);
+    final kcal = edited?.kcal ?? (food.caloriesPer100g * _amount).round();
+    final protein = edited?.proteinG ?? food.proteinG * _amount;
+    final carbs = edited?.carbsG ?? food.carbsG * _amount;
+    final fat = edited?.fatG ?? food.fatG * _amount;
 
     final proteinKcal = protein * 4;
     final carbsKcal = carbs * 4;
@@ -351,9 +382,12 @@ class _FoodDetailScreenState extends State<FoodDetailScreen> {
                 border: Border(top: BorderSide(color: colors.divider)),
               ),
               child: ElevatedButton.icon(
-                onPressed: _add,
-                icon: const Icon(Icons.add_rounded),
-                label: Text('${_mealCtas[_meal]} · $kcal kcal'),
+                onPressed: editing == null ? _add : () => _save(editing),
+                icon: Icon(
+                    editing == null ? Icons.add_rounded : Icons.check_rounded),
+                label: Text(editing == null
+                    ? '${_mealCtas[_meal]} · $kcal kcal'
+                    : 'Kaydet · $kcal kcal'),
                 style: ElevatedButton.styleFrom(minimumSize: const Size.fromHeight(56)),
               ),
             ),
