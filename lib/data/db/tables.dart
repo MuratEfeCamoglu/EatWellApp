@@ -15,8 +15,13 @@ mixin SyncColumns on Table {
   /// can still be propagated to other devices.
   IntColumn get deletedAt => integer().nullable()();
 
-  /// Always null until a cloud backend exists.
+  /// When this version of the row last reached the cloud (UTC ms); null
+  /// or older than [updatedAt] means it still has to be pushed.
   IntColumn get syncedAt => integer().nullable()();
+
+  /// The server's own timestamp for this row (schema v2). Pull cursors use
+  /// it instead of the phone's clock, which may be wrong (CLAUDE.md §13.1).
+  IntColumn get serverUpdatedAt => integer().nullable()();
 
   @override
   Set<Column> get primaryKey => {id};
@@ -70,6 +75,19 @@ class WeightEntries extends Table with SyncColumns {
   TextColumn get date => text()();
   RealColumn get kg => real()();
   IntColumn get measuredAt => integer()();
+}
+
+/// How far each synced table has been pulled from the cloud: the largest
+/// `server_updated_at` seen (schema v2). Bookkeeping, not user data, so it
+/// carries no [SyncColumns].
+@DataClassName('SyncStateRow')
+class SyncState extends Table {
+  /// Name of the synced table, e.g. `food_log_entries` or `profiles`.
+  TextColumn get entity => text()();
+  IntColumn get pulledUntil => integer()();
+
+  @override
+  Set<Column> get primaryKey => {entity};
 }
 
 /// Foods the user created themselves (not in the bundled catalog).

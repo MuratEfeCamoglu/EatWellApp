@@ -62,6 +62,17 @@ class $FoodLogEntriesTable extends FoodLogEntries
     type: DriftSqlType.int,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _serverUpdatedAtMeta = const VerificationMeta(
+    'serverUpdatedAt',
+  );
+  @override
+  late final GeneratedColumn<int> serverUpdatedAt = GeneratedColumn<int>(
+    'server_updated_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _dateMeta = const VerificationMeta('date');
   @override
   late final GeneratedColumn<String> date = GeneratedColumn<String>(
@@ -197,6 +208,7 @@ class $FoodLogEntriesTable extends FoodLogEntries
     updatedAt,
     deletedAt,
     syncedAt,
+    serverUpdatedAt,
     date,
     meal,
     foodName,
@@ -254,6 +266,15 @@ class $FoodLogEntriesTable extends FoodLogEntries
       context.handle(
         _syncedAtMeta,
         syncedAt.isAcceptableOrUnknown(data['synced_at']!, _syncedAtMeta),
+      );
+    }
+    if (data.containsKey('server_updated_at')) {
+      context.handle(
+        _serverUpdatedAtMeta,
+        serverUpdatedAt.isAcceptableOrUnknown(
+          data['server_updated_at']!,
+          _serverUpdatedAtMeta,
+        ),
       );
     }
     if (data.containsKey('date')) {
@@ -388,6 +409,10 @@ class $FoodLogEntriesTable extends FoodLogEntries
         DriftSqlType.int,
         data['${effectivePrefix}synced_at'],
       ),
+      serverUpdatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}server_updated_at'],
+      ),
       date: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}date'],
@@ -461,8 +486,13 @@ class FoodLogRow extends DataClass implements Insertable<FoodLogRow> {
   /// can still be propagated to other devices.
   final int? deletedAt;
 
-  /// Always null until a cloud backend exists.
+  /// When this version of the row last reached the cloud (UTC ms); null
+  /// or older than [updatedAt] means it still has to be pushed.
   final int? syncedAt;
+
+  /// The server's own timestamp for this row (schema v2). Pull cursors use
+  /// it instead of the phone's clock, which may be wrong (CLAUDE.md §13.1).
+  final int? serverUpdatedAt;
 
   /// Local day, `yyyy-MM-dd`.
   final String date;
@@ -496,6 +526,7 @@ class FoodLogRow extends DataClass implements Insertable<FoodLogRow> {
     required this.updatedAt,
     this.deletedAt,
     this.syncedAt,
+    this.serverUpdatedAt,
     required this.date,
     required this.meal,
     required this.foodName,
@@ -521,6 +552,9 @@ class FoodLogRow extends DataClass implements Insertable<FoodLogRow> {
     }
     if (!nullToAbsent || syncedAt != null) {
       map['synced_at'] = Variable<int>(syncedAt);
+    }
+    if (!nullToAbsent || serverUpdatedAt != null) {
+      map['server_updated_at'] = Variable<int>(serverUpdatedAt);
     }
     map['date'] = Variable<String>(date);
     map['meal'] = Variable<String>(meal);
@@ -551,6 +585,9 @@ class FoodLogRow extends DataClass implements Insertable<FoodLogRow> {
       syncedAt: syncedAt == null && nullToAbsent
           ? const Value.absent()
           : Value(syncedAt),
+      serverUpdatedAt: serverUpdatedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(serverUpdatedAt),
       date: Value(date),
       meal: Value(meal),
       foodName: Value(foodName),
@@ -580,6 +617,7 @@ class FoodLogRow extends DataClass implements Insertable<FoodLogRow> {
       updatedAt: serializer.fromJson<int>(json['updatedAt']),
       deletedAt: serializer.fromJson<int?>(json['deletedAt']),
       syncedAt: serializer.fromJson<int?>(json['syncedAt']),
+      serverUpdatedAt: serializer.fromJson<int?>(json['serverUpdatedAt']),
       date: serializer.fromJson<String>(json['date']),
       meal: serializer.fromJson<String>(json['meal']),
       foodName: serializer.fromJson<String>(json['foodName']),
@@ -604,6 +642,7 @@ class FoodLogRow extends DataClass implements Insertable<FoodLogRow> {
       'updatedAt': serializer.toJson<int>(updatedAt),
       'deletedAt': serializer.toJson<int?>(deletedAt),
       'syncedAt': serializer.toJson<int?>(syncedAt),
+      'serverUpdatedAt': serializer.toJson<int?>(serverUpdatedAt),
       'date': serializer.toJson<String>(date),
       'meal': serializer.toJson<String>(meal),
       'foodName': serializer.toJson<String>(foodName),
@@ -626,6 +665,7 @@ class FoodLogRow extends DataClass implements Insertable<FoodLogRow> {
     int? updatedAt,
     Value<int?> deletedAt = const Value.absent(),
     Value<int?> syncedAt = const Value.absent(),
+    Value<int?> serverUpdatedAt = const Value.absent(),
     String? date,
     String? meal,
     String? foodName,
@@ -645,6 +685,9 @@ class FoodLogRow extends DataClass implements Insertable<FoodLogRow> {
     updatedAt: updatedAt ?? this.updatedAt,
     deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
     syncedAt: syncedAt.present ? syncedAt.value : this.syncedAt,
+    serverUpdatedAt: serverUpdatedAt.present
+        ? serverUpdatedAt.value
+        : this.serverUpdatedAt,
     date: date ?? this.date,
     meal: meal ?? this.meal,
     foodName: foodName ?? this.foodName,
@@ -666,6 +709,9 @@ class FoodLogRow extends DataClass implements Insertable<FoodLogRow> {
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
       deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
       syncedAt: data.syncedAt.present ? data.syncedAt.value : this.syncedAt,
+      serverUpdatedAt: data.serverUpdatedAt.present
+          ? data.serverUpdatedAt.value
+          : this.serverUpdatedAt,
       date: data.date.present ? data.date.value : this.date,
       meal: data.meal.present ? data.meal.value : this.meal,
       foodName: data.foodName.present ? data.foodName.value : this.foodName,
@@ -692,6 +738,7 @@ class FoodLogRow extends DataClass implements Insertable<FoodLogRow> {
           ..write('updatedAt: $updatedAt, ')
           ..write('deletedAt: $deletedAt, ')
           ..write('syncedAt: $syncedAt, ')
+          ..write('serverUpdatedAt: $serverUpdatedAt, ')
           ..write('date: $date, ')
           ..write('meal: $meal, ')
           ..write('foodName: $foodName, ')
@@ -716,6 +763,7 @@ class FoodLogRow extends DataClass implements Insertable<FoodLogRow> {
     updatedAt,
     deletedAt,
     syncedAt,
+    serverUpdatedAt,
     date,
     meal,
     foodName,
@@ -739,6 +787,7 @@ class FoodLogRow extends DataClass implements Insertable<FoodLogRow> {
           other.updatedAt == this.updatedAt &&
           other.deletedAt == this.deletedAt &&
           other.syncedAt == this.syncedAt &&
+          other.serverUpdatedAt == this.serverUpdatedAt &&
           other.date == this.date &&
           other.meal == this.meal &&
           other.foodName == this.foodName &&
@@ -760,6 +809,7 @@ class FoodLogEntriesCompanion extends UpdateCompanion<FoodLogRow> {
   final Value<int> updatedAt;
   final Value<int?> deletedAt;
   final Value<int?> syncedAt;
+  final Value<int?> serverUpdatedAt;
   final Value<String> date;
   final Value<String> meal;
   final Value<String> foodName;
@@ -780,6 +830,7 @@ class FoodLogEntriesCompanion extends UpdateCompanion<FoodLogRow> {
     this.updatedAt = const Value.absent(),
     this.deletedAt = const Value.absent(),
     this.syncedAt = const Value.absent(),
+    this.serverUpdatedAt = const Value.absent(),
     this.date = const Value.absent(),
     this.meal = const Value.absent(),
     this.foodName = const Value.absent(),
@@ -801,6 +852,7 @@ class FoodLogEntriesCompanion extends UpdateCompanion<FoodLogRow> {
     required int updatedAt,
     this.deletedAt = const Value.absent(),
     this.syncedAt = const Value.absent(),
+    this.serverUpdatedAt = const Value.absent(),
     required String date,
     required String meal,
     required String foodName,
@@ -835,6 +887,7 @@ class FoodLogEntriesCompanion extends UpdateCompanion<FoodLogRow> {
     Expression<int>? updatedAt,
     Expression<int>? deletedAt,
     Expression<int>? syncedAt,
+    Expression<int>? serverUpdatedAt,
     Expression<String>? date,
     Expression<String>? meal,
     Expression<String>? foodName,
@@ -856,6 +909,7 @@ class FoodLogEntriesCompanion extends UpdateCompanion<FoodLogRow> {
       if (updatedAt != null) 'updated_at': updatedAt,
       if (deletedAt != null) 'deleted_at': deletedAt,
       if (syncedAt != null) 'synced_at': syncedAt,
+      if (serverUpdatedAt != null) 'server_updated_at': serverUpdatedAt,
       if (date != null) 'date': date,
       if (meal != null) 'meal': meal,
       if (foodName != null) 'food_name': foodName,
@@ -879,6 +933,7 @@ class FoodLogEntriesCompanion extends UpdateCompanion<FoodLogRow> {
     Value<int>? updatedAt,
     Value<int?>? deletedAt,
     Value<int?>? syncedAt,
+    Value<int?>? serverUpdatedAt,
     Value<String>? date,
     Value<String>? meal,
     Value<String>? foodName,
@@ -900,6 +955,7 @@ class FoodLogEntriesCompanion extends UpdateCompanion<FoodLogRow> {
       updatedAt: updatedAt ?? this.updatedAt,
       deletedAt: deletedAt ?? this.deletedAt,
       syncedAt: syncedAt ?? this.syncedAt,
+      serverUpdatedAt: serverUpdatedAt ?? this.serverUpdatedAt,
       date: date ?? this.date,
       meal: meal ?? this.meal,
       foodName: foodName ?? this.foodName,
@@ -934,6 +990,9 @@ class FoodLogEntriesCompanion extends UpdateCompanion<FoodLogRow> {
     }
     if (syncedAt.present) {
       map['synced_at'] = Variable<int>(syncedAt.value);
+    }
+    if (serverUpdatedAt.present) {
+      map['server_updated_at'] = Variable<int>(serverUpdatedAt.value);
     }
     if (date.present) {
       map['date'] = Variable<String>(date.value);
@@ -988,6 +1047,7 @@ class FoodLogEntriesCompanion extends UpdateCompanion<FoodLogRow> {
           ..write('updatedAt: $updatedAt, ')
           ..write('deletedAt: $deletedAt, ')
           ..write('syncedAt: $syncedAt, ')
+          ..write('serverUpdatedAt: $serverUpdatedAt, ')
           ..write('date: $date, ')
           ..write('meal: $meal, ')
           ..write('foodName: $foodName, ')
@@ -1066,6 +1126,17 @@ class $WaterLogsTable extends WaterLogs
     type: DriftSqlType.int,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _serverUpdatedAtMeta = const VerificationMeta(
+    'serverUpdatedAt',
+  );
+  @override
+  late final GeneratedColumn<int> serverUpdatedAt = GeneratedColumn<int>(
+    'server_updated_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _dateMeta = const VerificationMeta('date');
   @override
   late final GeneratedColumn<String> date = GeneratedColumn<String>(
@@ -1094,6 +1165,7 @@ class $WaterLogsTable extends WaterLogs
     updatedAt,
     deletedAt,
     syncedAt,
+    serverUpdatedAt,
     date,
     glasses,
   ];
@@ -1142,6 +1214,15 @@ class $WaterLogsTable extends WaterLogs
         syncedAt.isAcceptableOrUnknown(data['synced_at']!, _syncedAtMeta),
       );
     }
+    if (data.containsKey('server_updated_at')) {
+      context.handle(
+        _serverUpdatedAtMeta,
+        serverUpdatedAt.isAcceptableOrUnknown(
+          data['server_updated_at']!,
+          _serverUpdatedAtMeta,
+        ),
+      );
+    }
     if (data.containsKey('date')) {
       context.handle(
         _dateMeta,
@@ -1187,6 +1268,10 @@ class $WaterLogsTable extends WaterLogs
         DriftSqlType.int,
         data['${effectivePrefix}synced_at'],
       ),
+      serverUpdatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}server_updated_at'],
+      ),
       date: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}date'],
@@ -1216,8 +1301,13 @@ class WaterLogRow extends DataClass implements Insertable<WaterLogRow> {
   /// can still be propagated to other devices.
   final int? deletedAt;
 
-  /// Always null until a cloud backend exists.
+  /// When this version of the row last reached the cloud (UTC ms); null
+  /// or older than [updatedAt] means it still has to be pushed.
   final int? syncedAt;
+
+  /// The server's own timestamp for this row (schema v2). Pull cursors use
+  /// it instead of the phone's clock, which may be wrong (CLAUDE.md §13.1).
+  final int? serverUpdatedAt;
   final String date;
   final int glasses;
   const WaterLogRow({
@@ -1226,6 +1316,7 @@ class WaterLogRow extends DataClass implements Insertable<WaterLogRow> {
     required this.updatedAt,
     this.deletedAt,
     this.syncedAt,
+    this.serverUpdatedAt,
     required this.date,
     required this.glasses,
   });
@@ -1240,6 +1331,9 @@ class WaterLogRow extends DataClass implements Insertable<WaterLogRow> {
     }
     if (!nullToAbsent || syncedAt != null) {
       map['synced_at'] = Variable<int>(syncedAt);
+    }
+    if (!nullToAbsent || serverUpdatedAt != null) {
+      map['server_updated_at'] = Variable<int>(serverUpdatedAt);
     }
     map['date'] = Variable<String>(date);
     map['glasses'] = Variable<int>(glasses);
@@ -1257,6 +1351,9 @@ class WaterLogRow extends DataClass implements Insertable<WaterLogRow> {
       syncedAt: syncedAt == null && nullToAbsent
           ? const Value.absent()
           : Value(syncedAt),
+      serverUpdatedAt: serverUpdatedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(serverUpdatedAt),
       date: Value(date),
       glasses: Value(glasses),
     );
@@ -1273,6 +1370,7 @@ class WaterLogRow extends DataClass implements Insertable<WaterLogRow> {
       updatedAt: serializer.fromJson<int>(json['updatedAt']),
       deletedAt: serializer.fromJson<int?>(json['deletedAt']),
       syncedAt: serializer.fromJson<int?>(json['syncedAt']),
+      serverUpdatedAt: serializer.fromJson<int?>(json['serverUpdatedAt']),
       date: serializer.fromJson<String>(json['date']),
       glasses: serializer.fromJson<int>(json['glasses']),
     );
@@ -1286,6 +1384,7 @@ class WaterLogRow extends DataClass implements Insertable<WaterLogRow> {
       'updatedAt': serializer.toJson<int>(updatedAt),
       'deletedAt': serializer.toJson<int?>(deletedAt),
       'syncedAt': serializer.toJson<int?>(syncedAt),
+      'serverUpdatedAt': serializer.toJson<int?>(serverUpdatedAt),
       'date': serializer.toJson<String>(date),
       'glasses': serializer.toJson<int>(glasses),
     };
@@ -1297,6 +1396,7 @@ class WaterLogRow extends DataClass implements Insertable<WaterLogRow> {
     int? updatedAt,
     Value<int?> deletedAt = const Value.absent(),
     Value<int?> syncedAt = const Value.absent(),
+    Value<int?> serverUpdatedAt = const Value.absent(),
     String? date,
     int? glasses,
   }) => WaterLogRow(
@@ -1305,6 +1405,9 @@ class WaterLogRow extends DataClass implements Insertable<WaterLogRow> {
     updatedAt: updatedAt ?? this.updatedAt,
     deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
     syncedAt: syncedAt.present ? syncedAt.value : this.syncedAt,
+    serverUpdatedAt: serverUpdatedAt.present
+        ? serverUpdatedAt.value
+        : this.serverUpdatedAt,
     date: date ?? this.date,
     glasses: glasses ?? this.glasses,
   );
@@ -1315,6 +1418,9 @@ class WaterLogRow extends DataClass implements Insertable<WaterLogRow> {
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
       deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
       syncedAt: data.syncedAt.present ? data.syncedAt.value : this.syncedAt,
+      serverUpdatedAt: data.serverUpdatedAt.present
+          ? data.serverUpdatedAt.value
+          : this.serverUpdatedAt,
       date: data.date.present ? data.date.value : this.date,
       glasses: data.glasses.present ? data.glasses.value : this.glasses,
     );
@@ -1328,6 +1434,7 @@ class WaterLogRow extends DataClass implements Insertable<WaterLogRow> {
           ..write('updatedAt: $updatedAt, ')
           ..write('deletedAt: $deletedAt, ')
           ..write('syncedAt: $syncedAt, ')
+          ..write('serverUpdatedAt: $serverUpdatedAt, ')
           ..write('date: $date, ')
           ..write('glasses: $glasses')
           ..write(')'))
@@ -1335,8 +1442,16 @@ class WaterLogRow extends DataClass implements Insertable<WaterLogRow> {
   }
 
   @override
-  int get hashCode =>
-      Object.hash(id, createdAt, updatedAt, deletedAt, syncedAt, date, glasses);
+  int get hashCode => Object.hash(
+    id,
+    createdAt,
+    updatedAt,
+    deletedAt,
+    syncedAt,
+    serverUpdatedAt,
+    date,
+    glasses,
+  );
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -1346,6 +1461,7 @@ class WaterLogRow extends DataClass implements Insertable<WaterLogRow> {
           other.updatedAt == this.updatedAt &&
           other.deletedAt == this.deletedAt &&
           other.syncedAt == this.syncedAt &&
+          other.serverUpdatedAt == this.serverUpdatedAt &&
           other.date == this.date &&
           other.glasses == this.glasses);
 }
@@ -1356,6 +1472,7 @@ class WaterLogsCompanion extends UpdateCompanion<WaterLogRow> {
   final Value<int> updatedAt;
   final Value<int?> deletedAt;
   final Value<int?> syncedAt;
+  final Value<int?> serverUpdatedAt;
   final Value<String> date;
   final Value<int> glasses;
   final Value<int> rowid;
@@ -1365,6 +1482,7 @@ class WaterLogsCompanion extends UpdateCompanion<WaterLogRow> {
     this.updatedAt = const Value.absent(),
     this.deletedAt = const Value.absent(),
     this.syncedAt = const Value.absent(),
+    this.serverUpdatedAt = const Value.absent(),
     this.date = const Value.absent(),
     this.glasses = const Value.absent(),
     this.rowid = const Value.absent(),
@@ -1375,6 +1493,7 @@ class WaterLogsCompanion extends UpdateCompanion<WaterLogRow> {
     required int updatedAt,
     this.deletedAt = const Value.absent(),
     this.syncedAt = const Value.absent(),
+    this.serverUpdatedAt = const Value.absent(),
     required String date,
     required int glasses,
     this.rowid = const Value.absent(),
@@ -1389,6 +1508,7 @@ class WaterLogsCompanion extends UpdateCompanion<WaterLogRow> {
     Expression<int>? updatedAt,
     Expression<int>? deletedAt,
     Expression<int>? syncedAt,
+    Expression<int>? serverUpdatedAt,
     Expression<String>? date,
     Expression<int>? glasses,
     Expression<int>? rowid,
@@ -1399,6 +1519,7 @@ class WaterLogsCompanion extends UpdateCompanion<WaterLogRow> {
       if (updatedAt != null) 'updated_at': updatedAt,
       if (deletedAt != null) 'deleted_at': deletedAt,
       if (syncedAt != null) 'synced_at': syncedAt,
+      if (serverUpdatedAt != null) 'server_updated_at': serverUpdatedAt,
       if (date != null) 'date': date,
       if (glasses != null) 'glasses': glasses,
       if (rowid != null) 'rowid': rowid,
@@ -1411,6 +1532,7 @@ class WaterLogsCompanion extends UpdateCompanion<WaterLogRow> {
     Value<int>? updatedAt,
     Value<int?>? deletedAt,
     Value<int?>? syncedAt,
+    Value<int?>? serverUpdatedAt,
     Value<String>? date,
     Value<int>? glasses,
     Value<int>? rowid,
@@ -1421,6 +1543,7 @@ class WaterLogsCompanion extends UpdateCompanion<WaterLogRow> {
       updatedAt: updatedAt ?? this.updatedAt,
       deletedAt: deletedAt ?? this.deletedAt,
       syncedAt: syncedAt ?? this.syncedAt,
+      serverUpdatedAt: serverUpdatedAt ?? this.serverUpdatedAt,
       date: date ?? this.date,
       glasses: glasses ?? this.glasses,
       rowid: rowid ?? this.rowid,
@@ -1445,6 +1568,9 @@ class WaterLogsCompanion extends UpdateCompanion<WaterLogRow> {
     if (syncedAt.present) {
       map['synced_at'] = Variable<int>(syncedAt.value);
     }
+    if (serverUpdatedAt.present) {
+      map['server_updated_at'] = Variable<int>(serverUpdatedAt.value);
+    }
     if (date.present) {
       map['date'] = Variable<String>(date.value);
     }
@@ -1465,6 +1591,7 @@ class WaterLogsCompanion extends UpdateCompanion<WaterLogRow> {
           ..write('updatedAt: $updatedAt, ')
           ..write('deletedAt: $deletedAt, ')
           ..write('syncedAt: $syncedAt, ')
+          ..write('serverUpdatedAt: $serverUpdatedAt, ')
           ..write('date: $date, ')
           ..write('glasses: $glasses, ')
           ..write('rowid: $rowid')
@@ -1532,6 +1659,17 @@ class $WeightEntriesTable extends WeightEntries
     type: DriftSqlType.int,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _serverUpdatedAtMeta = const VerificationMeta(
+    'serverUpdatedAt',
+  );
+  @override
+  late final GeneratedColumn<int> serverUpdatedAt = GeneratedColumn<int>(
+    'server_updated_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _dateMeta = const VerificationMeta('date');
   @override
   late final GeneratedColumn<String> date = GeneratedColumn<String>(
@@ -1568,6 +1706,7 @@ class $WeightEntriesTable extends WeightEntries
     updatedAt,
     deletedAt,
     syncedAt,
+    serverUpdatedAt,
     date,
     kg,
     measuredAt,
@@ -1615,6 +1754,15 @@ class $WeightEntriesTable extends WeightEntries
       context.handle(
         _syncedAtMeta,
         syncedAt.isAcceptableOrUnknown(data['synced_at']!, _syncedAtMeta),
+      );
+    }
+    if (data.containsKey('server_updated_at')) {
+      context.handle(
+        _serverUpdatedAtMeta,
+        serverUpdatedAt.isAcceptableOrUnknown(
+          data['server_updated_at']!,
+          _serverUpdatedAtMeta,
+        ),
       );
     }
     if (data.containsKey('date')) {
@@ -1667,6 +1815,10 @@ class $WeightEntriesTable extends WeightEntries
         DriftSqlType.int,
         data['${effectivePrefix}synced_at'],
       ),
+      serverUpdatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}server_updated_at'],
+      ),
       date: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}date'],
@@ -1700,8 +1852,13 @@ class WeightRow extends DataClass implements Insertable<WeightRow> {
   /// can still be propagated to other devices.
   final int? deletedAt;
 
-  /// Always null until a cloud backend exists.
+  /// When this version of the row last reached the cloud (UTC ms); null
+  /// or older than [updatedAt] means it still has to be pushed.
   final int? syncedAt;
+
+  /// The server's own timestamp for this row (schema v2). Pull cursors use
+  /// it instead of the phone's clock, which may be wrong (CLAUDE.md §13.1).
+  final int? serverUpdatedAt;
   final String date;
   final double kg;
   final int measuredAt;
@@ -1711,6 +1868,7 @@ class WeightRow extends DataClass implements Insertable<WeightRow> {
     required this.updatedAt,
     this.deletedAt,
     this.syncedAt,
+    this.serverUpdatedAt,
     required this.date,
     required this.kg,
     required this.measuredAt,
@@ -1726,6 +1884,9 @@ class WeightRow extends DataClass implements Insertable<WeightRow> {
     }
     if (!nullToAbsent || syncedAt != null) {
       map['synced_at'] = Variable<int>(syncedAt);
+    }
+    if (!nullToAbsent || serverUpdatedAt != null) {
+      map['server_updated_at'] = Variable<int>(serverUpdatedAt);
     }
     map['date'] = Variable<String>(date);
     map['kg'] = Variable<double>(kg);
@@ -1744,6 +1905,9 @@ class WeightRow extends DataClass implements Insertable<WeightRow> {
       syncedAt: syncedAt == null && nullToAbsent
           ? const Value.absent()
           : Value(syncedAt),
+      serverUpdatedAt: serverUpdatedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(serverUpdatedAt),
       date: Value(date),
       kg: Value(kg),
       measuredAt: Value(measuredAt),
@@ -1761,6 +1925,7 @@ class WeightRow extends DataClass implements Insertable<WeightRow> {
       updatedAt: serializer.fromJson<int>(json['updatedAt']),
       deletedAt: serializer.fromJson<int?>(json['deletedAt']),
       syncedAt: serializer.fromJson<int?>(json['syncedAt']),
+      serverUpdatedAt: serializer.fromJson<int?>(json['serverUpdatedAt']),
       date: serializer.fromJson<String>(json['date']),
       kg: serializer.fromJson<double>(json['kg']),
       measuredAt: serializer.fromJson<int>(json['measuredAt']),
@@ -1775,6 +1940,7 @@ class WeightRow extends DataClass implements Insertable<WeightRow> {
       'updatedAt': serializer.toJson<int>(updatedAt),
       'deletedAt': serializer.toJson<int?>(deletedAt),
       'syncedAt': serializer.toJson<int?>(syncedAt),
+      'serverUpdatedAt': serializer.toJson<int?>(serverUpdatedAt),
       'date': serializer.toJson<String>(date),
       'kg': serializer.toJson<double>(kg),
       'measuredAt': serializer.toJson<int>(measuredAt),
@@ -1787,6 +1953,7 @@ class WeightRow extends DataClass implements Insertable<WeightRow> {
     int? updatedAt,
     Value<int?> deletedAt = const Value.absent(),
     Value<int?> syncedAt = const Value.absent(),
+    Value<int?> serverUpdatedAt = const Value.absent(),
     String? date,
     double? kg,
     int? measuredAt,
@@ -1796,6 +1963,9 @@ class WeightRow extends DataClass implements Insertable<WeightRow> {
     updatedAt: updatedAt ?? this.updatedAt,
     deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
     syncedAt: syncedAt.present ? syncedAt.value : this.syncedAt,
+    serverUpdatedAt: serverUpdatedAt.present
+        ? serverUpdatedAt.value
+        : this.serverUpdatedAt,
     date: date ?? this.date,
     kg: kg ?? this.kg,
     measuredAt: measuredAt ?? this.measuredAt,
@@ -1807,6 +1977,9 @@ class WeightRow extends DataClass implements Insertable<WeightRow> {
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
       deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
       syncedAt: data.syncedAt.present ? data.syncedAt.value : this.syncedAt,
+      serverUpdatedAt: data.serverUpdatedAt.present
+          ? data.serverUpdatedAt.value
+          : this.serverUpdatedAt,
       date: data.date.present ? data.date.value : this.date,
       kg: data.kg.present ? data.kg.value : this.kg,
       measuredAt: data.measuredAt.present
@@ -1823,6 +1996,7 @@ class WeightRow extends DataClass implements Insertable<WeightRow> {
           ..write('updatedAt: $updatedAt, ')
           ..write('deletedAt: $deletedAt, ')
           ..write('syncedAt: $syncedAt, ')
+          ..write('serverUpdatedAt: $serverUpdatedAt, ')
           ..write('date: $date, ')
           ..write('kg: $kg, ')
           ..write('measuredAt: $measuredAt')
@@ -1837,6 +2011,7 @@ class WeightRow extends DataClass implements Insertable<WeightRow> {
     updatedAt,
     deletedAt,
     syncedAt,
+    serverUpdatedAt,
     date,
     kg,
     measuredAt,
@@ -1850,6 +2025,7 @@ class WeightRow extends DataClass implements Insertable<WeightRow> {
           other.updatedAt == this.updatedAt &&
           other.deletedAt == this.deletedAt &&
           other.syncedAt == this.syncedAt &&
+          other.serverUpdatedAt == this.serverUpdatedAt &&
           other.date == this.date &&
           other.kg == this.kg &&
           other.measuredAt == this.measuredAt);
@@ -1861,6 +2037,7 @@ class WeightEntriesCompanion extends UpdateCompanion<WeightRow> {
   final Value<int> updatedAt;
   final Value<int?> deletedAt;
   final Value<int?> syncedAt;
+  final Value<int?> serverUpdatedAt;
   final Value<String> date;
   final Value<double> kg;
   final Value<int> measuredAt;
@@ -1871,6 +2048,7 @@ class WeightEntriesCompanion extends UpdateCompanion<WeightRow> {
     this.updatedAt = const Value.absent(),
     this.deletedAt = const Value.absent(),
     this.syncedAt = const Value.absent(),
+    this.serverUpdatedAt = const Value.absent(),
     this.date = const Value.absent(),
     this.kg = const Value.absent(),
     this.measuredAt = const Value.absent(),
@@ -1882,6 +2060,7 @@ class WeightEntriesCompanion extends UpdateCompanion<WeightRow> {
     required int updatedAt,
     this.deletedAt = const Value.absent(),
     this.syncedAt = const Value.absent(),
+    this.serverUpdatedAt = const Value.absent(),
     required String date,
     required double kg,
     required int measuredAt,
@@ -1898,6 +2077,7 @@ class WeightEntriesCompanion extends UpdateCompanion<WeightRow> {
     Expression<int>? updatedAt,
     Expression<int>? deletedAt,
     Expression<int>? syncedAt,
+    Expression<int>? serverUpdatedAt,
     Expression<String>? date,
     Expression<double>? kg,
     Expression<int>? measuredAt,
@@ -1909,6 +2089,7 @@ class WeightEntriesCompanion extends UpdateCompanion<WeightRow> {
       if (updatedAt != null) 'updated_at': updatedAt,
       if (deletedAt != null) 'deleted_at': deletedAt,
       if (syncedAt != null) 'synced_at': syncedAt,
+      if (serverUpdatedAt != null) 'server_updated_at': serverUpdatedAt,
       if (date != null) 'date': date,
       if (kg != null) 'kg': kg,
       if (measuredAt != null) 'measured_at': measuredAt,
@@ -1922,6 +2103,7 @@ class WeightEntriesCompanion extends UpdateCompanion<WeightRow> {
     Value<int>? updatedAt,
     Value<int?>? deletedAt,
     Value<int?>? syncedAt,
+    Value<int?>? serverUpdatedAt,
     Value<String>? date,
     Value<double>? kg,
     Value<int>? measuredAt,
@@ -1933,6 +2115,7 @@ class WeightEntriesCompanion extends UpdateCompanion<WeightRow> {
       updatedAt: updatedAt ?? this.updatedAt,
       deletedAt: deletedAt ?? this.deletedAt,
       syncedAt: syncedAt ?? this.syncedAt,
+      serverUpdatedAt: serverUpdatedAt ?? this.serverUpdatedAt,
       date: date ?? this.date,
       kg: kg ?? this.kg,
       measuredAt: measuredAt ?? this.measuredAt,
@@ -1958,6 +2141,9 @@ class WeightEntriesCompanion extends UpdateCompanion<WeightRow> {
     if (syncedAt.present) {
       map['synced_at'] = Variable<int>(syncedAt.value);
     }
+    if (serverUpdatedAt.present) {
+      map['server_updated_at'] = Variable<int>(serverUpdatedAt.value);
+    }
     if (date.present) {
       map['date'] = Variable<String>(date.value);
     }
@@ -1981,6 +2167,7 @@ class WeightEntriesCompanion extends UpdateCompanion<WeightRow> {
           ..write('updatedAt: $updatedAt, ')
           ..write('deletedAt: $deletedAt, ')
           ..write('syncedAt: $syncedAt, ')
+          ..write('serverUpdatedAt: $serverUpdatedAt, ')
           ..write('date: $date, ')
           ..write('kg: $kg, ')
           ..write('measuredAt: $measuredAt, ')
@@ -2044,6 +2231,17 @@ class $CustomFoodsTable extends CustomFoods
   @override
   late final GeneratedColumn<int> syncedAt = GeneratedColumn<int>(
     'synced_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _serverUpdatedAtMeta = const VerificationMeta(
+    'serverUpdatedAt',
+  );
+  @override
+  late final GeneratedColumn<int> serverUpdatedAt = GeneratedColumn<int>(
+    'server_updated_at',
     aliasedName,
     true,
     type: DriftSqlType.int,
@@ -2148,6 +2346,7 @@ class $CustomFoodsTable extends CustomFoods
     updatedAt,
     deletedAt,
     syncedAt,
+    serverUpdatedAt,
     name,
     brand,
     servingLabel,
@@ -2201,6 +2400,15 @@ class $CustomFoodsTable extends CustomFoods
       context.handle(
         _syncedAtMeta,
         syncedAt.isAcceptableOrUnknown(data['synced_at']!, _syncedAtMeta),
+      );
+    }
+    if (data.containsKey('server_updated_at')) {
+      context.handle(
+        _serverUpdatedAtMeta,
+        serverUpdatedAt.isAcceptableOrUnknown(
+          data['server_updated_at']!,
+          _serverUpdatedAtMeta,
+        ),
       );
     }
     if (data.containsKey('name')) {
@@ -2306,6 +2514,10 @@ class $CustomFoodsTable extends CustomFoods
         DriftSqlType.int,
         data['${effectivePrefix}synced_at'],
       ),
+      serverUpdatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}server_updated_at'],
+      ),
       name: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}name'],
@@ -2363,8 +2575,13 @@ class CustomFoodRow extends DataClass implements Insertable<CustomFoodRow> {
   /// can still be propagated to other devices.
   final int? deletedAt;
 
-  /// Always null until a cloud backend exists.
+  /// When this version of the row last reached the cloud (UTC ms); null
+  /// or older than [updatedAt] means it still has to be pushed.
   final int? syncedAt;
+
+  /// The server's own timestamp for this row (schema v2). Pull cursors use
+  /// it instead of the phone's clock, which may be wrong (CLAUDE.md §13.1).
+  final int? serverUpdatedAt;
   final String name;
   final String brand;
   final String servingLabel;
@@ -2384,6 +2601,7 @@ class CustomFoodRow extends DataClass implements Insertable<CustomFoodRow> {
     required this.updatedAt,
     this.deletedAt,
     this.syncedAt,
+    this.serverUpdatedAt,
     required this.name,
     required this.brand,
     required this.servingLabel,
@@ -2405,6 +2623,9 @@ class CustomFoodRow extends DataClass implements Insertable<CustomFoodRow> {
     }
     if (!nullToAbsent || syncedAt != null) {
       map['synced_at'] = Variable<int>(syncedAt);
+    }
+    if (!nullToAbsent || serverUpdatedAt != null) {
+      map['server_updated_at'] = Variable<int>(serverUpdatedAt);
     }
     map['name'] = Variable<String>(name);
     map['brand'] = Variable<String>(brand);
@@ -2431,6 +2652,9 @@ class CustomFoodRow extends DataClass implements Insertable<CustomFoodRow> {
       syncedAt: syncedAt == null && nullToAbsent
           ? const Value.absent()
           : Value(syncedAt),
+      serverUpdatedAt: serverUpdatedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(serverUpdatedAt),
       name: Value(name),
       brand: Value(brand),
       servingLabel: Value(servingLabel),
@@ -2456,6 +2680,7 @@ class CustomFoodRow extends DataClass implements Insertable<CustomFoodRow> {
       updatedAt: serializer.fromJson<int>(json['updatedAt']),
       deletedAt: serializer.fromJson<int?>(json['deletedAt']),
       syncedAt: serializer.fromJson<int?>(json['syncedAt']),
+      serverUpdatedAt: serializer.fromJson<int?>(json['serverUpdatedAt']),
       name: serializer.fromJson<String>(json['name']),
       brand: serializer.fromJson<String>(json['brand']),
       servingLabel: serializer.fromJson<String>(json['servingLabel']),
@@ -2476,6 +2701,7 @@ class CustomFoodRow extends DataClass implements Insertable<CustomFoodRow> {
       'updatedAt': serializer.toJson<int>(updatedAt),
       'deletedAt': serializer.toJson<int?>(deletedAt),
       'syncedAt': serializer.toJson<int?>(syncedAt),
+      'serverUpdatedAt': serializer.toJson<int?>(serverUpdatedAt),
       'name': serializer.toJson<String>(name),
       'brand': serializer.toJson<String>(brand),
       'servingLabel': serializer.toJson<String>(servingLabel),
@@ -2494,6 +2720,7 @@ class CustomFoodRow extends DataClass implements Insertable<CustomFoodRow> {
     int? updatedAt,
     Value<int?> deletedAt = const Value.absent(),
     Value<int?> syncedAt = const Value.absent(),
+    Value<int?> serverUpdatedAt = const Value.absent(),
     String? name,
     String? brand,
     String? servingLabel,
@@ -2509,6 +2736,9 @@ class CustomFoodRow extends DataClass implements Insertable<CustomFoodRow> {
     updatedAt: updatedAt ?? this.updatedAt,
     deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
     syncedAt: syncedAt.present ? syncedAt.value : this.syncedAt,
+    serverUpdatedAt: serverUpdatedAt.present
+        ? serverUpdatedAt.value
+        : this.serverUpdatedAt,
     name: name ?? this.name,
     brand: brand ?? this.brand,
     servingLabel: servingLabel ?? this.servingLabel,
@@ -2526,6 +2756,9 @@ class CustomFoodRow extends DataClass implements Insertable<CustomFoodRow> {
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
       deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
       syncedAt: data.syncedAt.present ? data.syncedAt.value : this.syncedAt,
+      serverUpdatedAt: data.serverUpdatedAt.present
+          ? data.serverUpdatedAt.value
+          : this.serverUpdatedAt,
       name: data.name.present ? data.name.value : this.name,
       brand: data.brand.present ? data.brand.value : this.brand,
       servingLabel: data.servingLabel.present
@@ -2550,6 +2783,7 @@ class CustomFoodRow extends DataClass implements Insertable<CustomFoodRow> {
           ..write('updatedAt: $updatedAt, ')
           ..write('deletedAt: $deletedAt, ')
           ..write('syncedAt: $syncedAt, ')
+          ..write('serverUpdatedAt: $serverUpdatedAt, ')
           ..write('name: $name, ')
           ..write('brand: $brand, ')
           ..write('servingLabel: $servingLabel, ')
@@ -2570,6 +2804,7 @@ class CustomFoodRow extends DataClass implements Insertable<CustomFoodRow> {
     updatedAt,
     deletedAt,
     syncedAt,
+    serverUpdatedAt,
     name,
     brand,
     servingLabel,
@@ -2589,6 +2824,7 @@ class CustomFoodRow extends DataClass implements Insertable<CustomFoodRow> {
           other.updatedAt == this.updatedAt &&
           other.deletedAt == this.deletedAt &&
           other.syncedAt == this.syncedAt &&
+          other.serverUpdatedAt == this.serverUpdatedAt &&
           other.name == this.name &&
           other.brand == this.brand &&
           other.servingLabel == this.servingLabel &&
@@ -2606,6 +2842,7 @@ class CustomFoodsCompanion extends UpdateCompanion<CustomFoodRow> {
   final Value<int> updatedAt;
   final Value<int?> deletedAt;
   final Value<int?> syncedAt;
+  final Value<int?> serverUpdatedAt;
   final Value<String> name;
   final Value<String> brand;
   final Value<String> servingLabel;
@@ -2622,6 +2859,7 @@ class CustomFoodsCompanion extends UpdateCompanion<CustomFoodRow> {
     this.updatedAt = const Value.absent(),
     this.deletedAt = const Value.absent(),
     this.syncedAt = const Value.absent(),
+    this.serverUpdatedAt = const Value.absent(),
     this.name = const Value.absent(),
     this.brand = const Value.absent(),
     this.servingLabel = const Value.absent(),
@@ -2639,6 +2877,7 @@ class CustomFoodsCompanion extends UpdateCompanion<CustomFoodRow> {
     required int updatedAt,
     this.deletedAt = const Value.absent(),
     this.syncedAt = const Value.absent(),
+    this.serverUpdatedAt = const Value.absent(),
     required String name,
     this.brand = const Value.absent(),
     required String servingLabel,
@@ -2665,6 +2904,7 @@ class CustomFoodsCompanion extends UpdateCompanion<CustomFoodRow> {
     Expression<int>? updatedAt,
     Expression<int>? deletedAt,
     Expression<int>? syncedAt,
+    Expression<int>? serverUpdatedAt,
     Expression<String>? name,
     Expression<String>? brand,
     Expression<String>? servingLabel,
@@ -2682,6 +2922,7 @@ class CustomFoodsCompanion extends UpdateCompanion<CustomFoodRow> {
       if (updatedAt != null) 'updated_at': updatedAt,
       if (deletedAt != null) 'deleted_at': deletedAt,
       if (syncedAt != null) 'synced_at': syncedAt,
+      if (serverUpdatedAt != null) 'server_updated_at': serverUpdatedAt,
       if (name != null) 'name': name,
       if (brand != null) 'brand': brand,
       if (servingLabel != null) 'serving_label': servingLabel,
@@ -2701,6 +2942,7 @@ class CustomFoodsCompanion extends UpdateCompanion<CustomFoodRow> {
     Value<int>? updatedAt,
     Value<int?>? deletedAt,
     Value<int?>? syncedAt,
+    Value<int?>? serverUpdatedAt,
     Value<String>? name,
     Value<String>? brand,
     Value<String>? servingLabel,
@@ -2718,6 +2960,7 @@ class CustomFoodsCompanion extends UpdateCompanion<CustomFoodRow> {
       updatedAt: updatedAt ?? this.updatedAt,
       deletedAt: deletedAt ?? this.deletedAt,
       syncedAt: syncedAt ?? this.syncedAt,
+      serverUpdatedAt: serverUpdatedAt ?? this.serverUpdatedAt,
       name: name ?? this.name,
       brand: brand ?? this.brand,
       servingLabel: servingLabel ?? this.servingLabel,
@@ -2748,6 +2991,9 @@ class CustomFoodsCompanion extends UpdateCompanion<CustomFoodRow> {
     }
     if (syncedAt.present) {
       map['synced_at'] = Variable<int>(syncedAt.value);
+    }
+    if (serverUpdatedAt.present) {
+      map['server_updated_at'] = Variable<int>(serverUpdatedAt.value);
     }
     if (name.present) {
       map['name'] = Variable<String>(name.value);
@@ -2790,6 +3036,7 @@ class CustomFoodsCompanion extends UpdateCompanion<CustomFoodRow> {
           ..write('updatedAt: $updatedAt, ')
           ..write('deletedAt: $deletedAt, ')
           ..write('syncedAt: $syncedAt, ')
+          ..write('serverUpdatedAt: $serverUpdatedAt, ')
           ..write('name: $name, ')
           ..write('brand: $brand, ')
           ..write('servingLabel: $servingLabel, ')
@@ -2805,6 +3052,227 @@ class CustomFoodsCompanion extends UpdateCompanion<CustomFoodRow> {
   }
 }
 
+class $SyncStateTable extends SyncState
+    with TableInfo<$SyncStateTable, SyncStateRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $SyncStateTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _entityMeta = const VerificationMeta('entity');
+  @override
+  late final GeneratedColumn<String> entity = GeneratedColumn<String>(
+    'entity',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _pulledUntilMeta = const VerificationMeta(
+    'pulledUntil',
+  );
+  @override
+  late final GeneratedColumn<int> pulledUntil = GeneratedColumn<int>(
+    'pulled_until',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [entity, pulledUntil];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'sync_state';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<SyncStateRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('entity')) {
+      context.handle(
+        _entityMeta,
+        entity.isAcceptableOrUnknown(data['entity']!, _entityMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_entityMeta);
+    }
+    if (data.containsKey('pulled_until')) {
+      context.handle(
+        _pulledUntilMeta,
+        pulledUntil.isAcceptableOrUnknown(
+          data['pulled_until']!,
+          _pulledUntilMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_pulledUntilMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {entity};
+  @override
+  SyncStateRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return SyncStateRow(
+      entity: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}entity'],
+      )!,
+      pulledUntil: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}pulled_until'],
+      )!,
+    );
+  }
+
+  @override
+  $SyncStateTable createAlias(String alias) {
+    return $SyncStateTable(attachedDatabase, alias);
+  }
+}
+
+class SyncStateRow extends DataClass implements Insertable<SyncStateRow> {
+  /// Name of the synced table, e.g. `food_log_entries` or `profiles`.
+  final String entity;
+  final int pulledUntil;
+  const SyncStateRow({required this.entity, required this.pulledUntil});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['entity'] = Variable<String>(entity);
+    map['pulled_until'] = Variable<int>(pulledUntil);
+    return map;
+  }
+
+  SyncStateCompanion toCompanion(bool nullToAbsent) {
+    return SyncStateCompanion(
+      entity: Value(entity),
+      pulledUntil: Value(pulledUntil),
+    );
+  }
+
+  factory SyncStateRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return SyncStateRow(
+      entity: serializer.fromJson<String>(json['entity']),
+      pulledUntil: serializer.fromJson<int>(json['pulledUntil']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'entity': serializer.toJson<String>(entity),
+      'pulledUntil': serializer.toJson<int>(pulledUntil),
+    };
+  }
+
+  SyncStateRow copyWith({String? entity, int? pulledUntil}) => SyncStateRow(
+    entity: entity ?? this.entity,
+    pulledUntil: pulledUntil ?? this.pulledUntil,
+  );
+  SyncStateRow copyWithCompanion(SyncStateCompanion data) {
+    return SyncStateRow(
+      entity: data.entity.present ? data.entity.value : this.entity,
+      pulledUntil: data.pulledUntil.present
+          ? data.pulledUntil.value
+          : this.pulledUntil,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SyncStateRow(')
+          ..write('entity: $entity, ')
+          ..write('pulledUntil: $pulledUntil')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(entity, pulledUntil);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is SyncStateRow &&
+          other.entity == this.entity &&
+          other.pulledUntil == this.pulledUntil);
+}
+
+class SyncStateCompanion extends UpdateCompanion<SyncStateRow> {
+  final Value<String> entity;
+  final Value<int> pulledUntil;
+  final Value<int> rowid;
+  const SyncStateCompanion({
+    this.entity = const Value.absent(),
+    this.pulledUntil = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  SyncStateCompanion.insert({
+    required String entity,
+    required int pulledUntil,
+    this.rowid = const Value.absent(),
+  }) : entity = Value(entity),
+       pulledUntil = Value(pulledUntil);
+  static Insertable<SyncStateRow> custom({
+    Expression<String>? entity,
+    Expression<int>? pulledUntil,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (entity != null) 'entity': entity,
+      if (pulledUntil != null) 'pulled_until': pulledUntil,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  SyncStateCompanion copyWith({
+    Value<String>? entity,
+    Value<int>? pulledUntil,
+    Value<int>? rowid,
+  }) {
+    return SyncStateCompanion(
+      entity: entity ?? this.entity,
+      pulledUntil: pulledUntil ?? this.pulledUntil,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (entity.present) {
+      map['entity'] = Variable<String>(entity.value);
+    }
+    if (pulledUntil.present) {
+      map['pulled_until'] = Variable<int>(pulledUntil.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SyncStateCompanion(')
+          ..write('entity: $entity, ')
+          ..write('pulledUntil: $pulledUntil, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -2812,6 +3280,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $WaterLogsTable waterLogs = $WaterLogsTable(this);
   late final $WeightEntriesTable weightEntries = $WeightEntriesTable(this);
   late final $CustomFoodsTable customFoods = $CustomFoodsTable(this);
+  late final $SyncStateTable syncState = $SyncStateTable(this);
   late final Index foodLogDateMeal = Index(
     'food_log_date_meal',
     'CREATE INDEX food_log_date_meal ON food_log_entries (date, meal)',
@@ -2833,6 +3302,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     waterLogs,
     weightEntries,
     customFoods,
+    syncState,
     foodLogDateMeal,
     foodLogDate,
   ];
@@ -2845,6 +3315,7 @@ typedef $$FoodLogEntriesTableCreateCompanionBuilder =
       required int updatedAt,
       Value<int?> deletedAt,
       Value<int?> syncedAt,
+      Value<int?> serverUpdatedAt,
       required String date,
       required String meal,
       required String foodName,
@@ -2867,6 +3338,7 @@ typedef $$FoodLogEntriesTableUpdateCompanionBuilder =
       Value<int> updatedAt,
       Value<int?> deletedAt,
       Value<int?> syncedAt,
+      Value<int?> serverUpdatedAt,
       Value<String> date,
       Value<String> meal,
       Value<String> foodName,
@@ -2914,6 +3386,11 @@ class $$FoodLogEntriesTableFilterComposer
 
   ColumnFilters<int> get syncedAt => $composableBuilder(
     column: $table.syncedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get serverUpdatedAt => $composableBuilder(
+    column: $table.serverUpdatedAt,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -3017,6 +3494,11 @@ class $$FoodLogEntriesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<int> get serverUpdatedAt => $composableBuilder(
+    column: $table.serverUpdatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get date => $composableBuilder(
     column: $table.date,
     builder: (column) => ColumnOrderings(column),
@@ -3107,6 +3589,11 @@ class $$FoodLogEntriesTableAnnotationComposer
   GeneratedColumn<int> get syncedAt =>
       $composableBuilder(column: $table.syncedAt, builder: (column) => column);
 
+  GeneratedColumn<int> get serverUpdatedAt => $composableBuilder(
+    column: $table.serverUpdatedAt,
+    builder: (column) => column,
+  );
+
   GeneratedColumn<String> get date =>
       $composableBuilder(column: $table.date, builder: (column) => column);
 
@@ -3187,6 +3674,7 @@ class $$FoodLogEntriesTableTableManager
                 Value<int> updatedAt = const Value.absent(),
                 Value<int?> deletedAt = const Value.absent(),
                 Value<int?> syncedAt = const Value.absent(),
+                Value<int?> serverUpdatedAt = const Value.absent(),
                 Value<String> date = const Value.absent(),
                 Value<String> meal = const Value.absent(),
                 Value<String> foodName = const Value.absent(),
@@ -3207,6 +3695,7 @@ class $$FoodLogEntriesTableTableManager
                 updatedAt: updatedAt,
                 deletedAt: deletedAt,
                 syncedAt: syncedAt,
+                serverUpdatedAt: serverUpdatedAt,
                 date: date,
                 meal: meal,
                 foodName: foodName,
@@ -3229,6 +3718,7 @@ class $$FoodLogEntriesTableTableManager
                 required int updatedAt,
                 Value<int?> deletedAt = const Value.absent(),
                 Value<int?> syncedAt = const Value.absent(),
+                Value<int?> serverUpdatedAt = const Value.absent(),
                 required String date,
                 required String meal,
                 required String foodName,
@@ -3249,6 +3739,7 @@ class $$FoodLogEntriesTableTableManager
                 updatedAt: updatedAt,
                 deletedAt: deletedAt,
                 syncedAt: syncedAt,
+                serverUpdatedAt: serverUpdatedAt,
                 date: date,
                 meal: meal,
                 foodName: foodName,
@@ -3305,6 +3796,7 @@ typedef $$WaterLogsTableCreateCompanionBuilder =
       required int updatedAt,
       Value<int?> deletedAt,
       Value<int?> syncedAt,
+      Value<int?> serverUpdatedAt,
       required String date,
       required int glasses,
       Value<int> rowid,
@@ -3316,6 +3808,7 @@ typedef $$WaterLogsTableUpdateCompanionBuilder =
       Value<int> updatedAt,
       Value<int?> deletedAt,
       Value<int?> syncedAt,
+      Value<int?> serverUpdatedAt,
       Value<String> date,
       Value<int> glasses,
       Value<int> rowid,
@@ -3352,6 +3845,11 @@ class $$WaterLogsTableFilterComposer
 
   ColumnFilters<int> get syncedAt => $composableBuilder(
     column: $table.syncedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get serverUpdatedAt => $composableBuilder(
+    column: $table.serverUpdatedAt,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -3400,6 +3898,11 @@ class $$WaterLogsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<int> get serverUpdatedAt => $composableBuilder(
+    column: $table.serverUpdatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get date => $composableBuilder(
     column: $table.date,
     builder: (column) => ColumnOrderings(column),
@@ -3434,6 +3937,11 @@ class $$WaterLogsTableAnnotationComposer
 
   GeneratedColumn<int> get syncedAt =>
       $composableBuilder(column: $table.syncedAt, builder: (column) => column);
+
+  GeneratedColumn<int> get serverUpdatedAt => $composableBuilder(
+    column: $table.serverUpdatedAt,
+    builder: (column) => column,
+  );
 
   GeneratedColumn<String> get date =>
       $composableBuilder(column: $table.date, builder: (column) => column);
@@ -3478,6 +3986,7 @@ class $$WaterLogsTableTableManager
                 Value<int> updatedAt = const Value.absent(),
                 Value<int?> deletedAt = const Value.absent(),
                 Value<int?> syncedAt = const Value.absent(),
+                Value<int?> serverUpdatedAt = const Value.absent(),
                 Value<String> date = const Value.absent(),
                 Value<int> glasses = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
@@ -3487,6 +3996,7 @@ class $$WaterLogsTableTableManager
                 updatedAt: updatedAt,
                 deletedAt: deletedAt,
                 syncedAt: syncedAt,
+                serverUpdatedAt: serverUpdatedAt,
                 date: date,
                 glasses: glasses,
                 rowid: rowid,
@@ -3498,6 +4008,7 @@ class $$WaterLogsTableTableManager
                 required int updatedAt,
                 Value<int?> deletedAt = const Value.absent(),
                 Value<int?> syncedAt = const Value.absent(),
+                Value<int?> serverUpdatedAt = const Value.absent(),
                 required String date,
                 required int glasses,
                 Value<int> rowid = const Value.absent(),
@@ -3507,6 +4018,7 @@ class $$WaterLogsTableTableManager
                 updatedAt: updatedAt,
                 deletedAt: deletedAt,
                 syncedAt: syncedAt,
+                serverUpdatedAt: serverUpdatedAt,
                 date: date,
                 glasses: glasses,
                 rowid: rowid,
@@ -3552,6 +4064,7 @@ typedef $$WeightEntriesTableCreateCompanionBuilder =
       required int updatedAt,
       Value<int?> deletedAt,
       Value<int?> syncedAt,
+      Value<int?> serverUpdatedAt,
       required String date,
       required double kg,
       required int measuredAt,
@@ -3564,6 +4077,7 @@ typedef $$WeightEntriesTableUpdateCompanionBuilder =
       Value<int> updatedAt,
       Value<int?> deletedAt,
       Value<int?> syncedAt,
+      Value<int?> serverUpdatedAt,
       Value<String> date,
       Value<double> kg,
       Value<int> measuredAt,
@@ -3601,6 +4115,11 @@ class $$WeightEntriesTableFilterComposer
 
   ColumnFilters<int> get syncedAt => $composableBuilder(
     column: $table.syncedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get serverUpdatedAt => $composableBuilder(
+    column: $table.serverUpdatedAt,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -3654,6 +4173,11 @@ class $$WeightEntriesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<int> get serverUpdatedAt => $composableBuilder(
+    column: $table.serverUpdatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get date => $composableBuilder(
     column: $table.date,
     builder: (column) => ColumnOrderings(column),
@@ -3693,6 +4217,11 @@ class $$WeightEntriesTableAnnotationComposer
 
   GeneratedColumn<int> get syncedAt =>
       $composableBuilder(column: $table.syncedAt, builder: (column) => column);
+
+  GeneratedColumn<int> get serverUpdatedAt => $composableBuilder(
+    column: $table.serverUpdatedAt,
+    builder: (column) => column,
+  );
 
   GeneratedColumn<String> get date =>
       $composableBuilder(column: $table.date, builder: (column) => column);
@@ -3742,6 +4271,7 @@ class $$WeightEntriesTableTableManager
                 Value<int> updatedAt = const Value.absent(),
                 Value<int?> deletedAt = const Value.absent(),
                 Value<int?> syncedAt = const Value.absent(),
+                Value<int?> serverUpdatedAt = const Value.absent(),
                 Value<String> date = const Value.absent(),
                 Value<double> kg = const Value.absent(),
                 Value<int> measuredAt = const Value.absent(),
@@ -3752,6 +4282,7 @@ class $$WeightEntriesTableTableManager
                 updatedAt: updatedAt,
                 deletedAt: deletedAt,
                 syncedAt: syncedAt,
+                serverUpdatedAt: serverUpdatedAt,
                 date: date,
                 kg: kg,
                 measuredAt: measuredAt,
@@ -3764,6 +4295,7 @@ class $$WeightEntriesTableTableManager
                 required int updatedAt,
                 Value<int?> deletedAt = const Value.absent(),
                 Value<int?> syncedAt = const Value.absent(),
+                Value<int?> serverUpdatedAt = const Value.absent(),
                 required String date,
                 required double kg,
                 required int measuredAt,
@@ -3774,6 +4306,7 @@ class $$WeightEntriesTableTableManager
                 updatedAt: updatedAt,
                 deletedAt: deletedAt,
                 syncedAt: syncedAt,
+                serverUpdatedAt: serverUpdatedAt,
                 date: date,
                 kg: kg,
                 measuredAt: measuredAt,
@@ -3820,6 +4353,7 @@ typedef $$CustomFoodsTableCreateCompanionBuilder =
       required int updatedAt,
       Value<int?> deletedAt,
       Value<int?> syncedAt,
+      Value<int?> serverUpdatedAt,
       required String name,
       Value<String> brand,
       required String servingLabel,
@@ -3838,6 +4372,7 @@ typedef $$CustomFoodsTableUpdateCompanionBuilder =
       Value<int> updatedAt,
       Value<int?> deletedAt,
       Value<int?> syncedAt,
+      Value<int?> serverUpdatedAt,
       Value<String> name,
       Value<String> brand,
       Value<String> servingLabel,
@@ -3881,6 +4416,11 @@ class $$CustomFoodsTableFilterComposer
 
   ColumnFilters<int> get syncedAt => $composableBuilder(
     column: $table.syncedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get serverUpdatedAt => $composableBuilder(
+    column: $table.serverUpdatedAt,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -3964,6 +4504,11 @@ class $$CustomFoodsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<int> get serverUpdatedAt => $composableBuilder(
+    column: $table.serverUpdatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get name => $composableBuilder(
     column: $table.name,
     builder: (column) => ColumnOrderings(column),
@@ -4034,6 +4579,11 @@ class $$CustomFoodsTableAnnotationComposer
   GeneratedColumn<int> get syncedAt =>
       $composableBuilder(column: $table.syncedAt, builder: (column) => column);
 
+  GeneratedColumn<int> get serverUpdatedAt => $composableBuilder(
+    column: $table.serverUpdatedAt,
+    builder: (column) => column,
+  );
+
   GeneratedColumn<String> get name =>
       $composableBuilder(column: $table.name, builder: (column) => column);
 
@@ -4102,6 +4652,7 @@ class $$CustomFoodsTableTableManager
                 Value<int> updatedAt = const Value.absent(),
                 Value<int?> deletedAt = const Value.absent(),
                 Value<int?> syncedAt = const Value.absent(),
+                Value<int?> serverUpdatedAt = const Value.absent(),
                 Value<String> name = const Value.absent(),
                 Value<String> brand = const Value.absent(),
                 Value<String> servingLabel = const Value.absent(),
@@ -4118,6 +4669,7 @@ class $$CustomFoodsTableTableManager
                 updatedAt: updatedAt,
                 deletedAt: deletedAt,
                 syncedAt: syncedAt,
+                serverUpdatedAt: serverUpdatedAt,
                 name: name,
                 brand: brand,
                 servingLabel: servingLabel,
@@ -4136,6 +4688,7 @@ class $$CustomFoodsTableTableManager
                 required int updatedAt,
                 Value<int?> deletedAt = const Value.absent(),
                 Value<int?> syncedAt = const Value.absent(),
+                Value<int?> serverUpdatedAt = const Value.absent(),
                 required String name,
                 Value<String> brand = const Value.absent(),
                 required String servingLabel,
@@ -4152,6 +4705,7 @@ class $$CustomFoodsTableTableManager
                 updatedAt: updatedAt,
                 deletedAt: deletedAt,
                 syncedAt: syncedAt,
+                serverUpdatedAt: serverUpdatedAt,
                 name: name,
                 brand: brand,
                 servingLabel: servingLabel,
@@ -4197,6 +4751,160 @@ typedef $$CustomFoodsTableProcessedTableManager =
       CustomFoodRow,
       PrefetchHooks Function()
     >;
+typedef $$SyncStateTableCreateCompanionBuilder =
+    SyncStateCompanion Function({
+      required String entity,
+      required int pulledUntil,
+      Value<int> rowid,
+    });
+typedef $$SyncStateTableUpdateCompanionBuilder =
+    SyncStateCompanion Function({
+      Value<String> entity,
+      Value<int> pulledUntil,
+      Value<int> rowid,
+    });
+
+class $$SyncStateTableFilterComposer
+    extends Composer<_$AppDatabase, $SyncStateTable> {
+  $$SyncStateTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get entity => $composableBuilder(
+    column: $table.entity,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get pulledUntil => $composableBuilder(
+    column: $table.pulledUntil,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$SyncStateTableOrderingComposer
+    extends Composer<_$AppDatabase, $SyncStateTable> {
+  $$SyncStateTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get entity => $composableBuilder(
+    column: $table.entity,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get pulledUntil => $composableBuilder(
+    column: $table.pulledUntil,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$SyncStateTableAnnotationComposer
+    extends Composer<_$AppDatabase, $SyncStateTable> {
+  $$SyncStateTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get entity =>
+      $composableBuilder(column: $table.entity, builder: (column) => column);
+
+  GeneratedColumn<int> get pulledUntil => $composableBuilder(
+    column: $table.pulledUntil,
+    builder: (column) => column,
+  );
+}
+
+class $$SyncStateTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $SyncStateTable,
+          SyncStateRow,
+          $$SyncStateTableFilterComposer,
+          $$SyncStateTableOrderingComposer,
+          $$SyncStateTableAnnotationComposer,
+          $$SyncStateTableCreateCompanionBuilder,
+          $$SyncStateTableUpdateCompanionBuilder,
+          (
+            SyncStateRow,
+            BaseReferences<_$AppDatabase, $SyncStateTable, SyncStateRow>,
+          ),
+          SyncStateRow,
+          PrefetchHooks Function()
+        > {
+  $$SyncStateTableTableManager(_$AppDatabase db, $SyncStateTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$SyncStateTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$SyncStateTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$SyncStateTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> entity = const Value.absent(),
+                Value<int> pulledUntil = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => SyncStateCompanion(
+                entity: entity,
+                pulledUntil: pulledUntil,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String entity,
+                required int pulledUntil,
+                Value<int> rowid = const Value.absent(),
+              }) => SyncStateCompanion.insert(
+                entity: entity,
+                pulledUntil: pulledUntil,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable<$SyncStateTable, SyncStateRow>(table),
+                  BaseReferences<_$AppDatabase, $SyncStateTable, SyncStateRow>(
+                    db,
+                    table,
+                    e,
+                  ),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$SyncStateTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $SyncStateTable,
+      SyncStateRow,
+      $$SyncStateTableFilterComposer,
+      $$SyncStateTableOrderingComposer,
+      $$SyncStateTableAnnotationComposer,
+      $$SyncStateTableCreateCompanionBuilder,
+      $$SyncStateTableUpdateCompanionBuilder,
+      (
+        SyncStateRow,
+        BaseReferences<_$AppDatabase, $SyncStateTable, SyncStateRow>,
+      ),
+      SyncStateRow,
+      PrefetchHooks Function()
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -4209,4 +4917,6 @@ class $AppDatabaseManager {
       $$WeightEntriesTableTableManager(_db, _db.weightEntries);
   $$CustomFoodsTableTableManager get customFoods =>
       $$CustomFoodsTableTableManager(_db, _db.customFoods);
+  $$SyncStateTableTableManager get syncState =>
+      $$SyncStateTableTableManager(_db, _db.syncState);
 }

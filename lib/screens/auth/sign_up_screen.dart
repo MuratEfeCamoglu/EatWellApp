@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../../data/app_state.dart';
+import '../../data/auth.dart';
+import '../../data/profile_validation.dart' show validateEmail;
 import '../../router.dart';
 import '../../widgets/app_back_button.dart';
 
@@ -18,6 +21,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _obscurePassword = true;
+  bool _busy = false;
 
   @override
   void dispose() {
@@ -27,13 +31,65 @@ class _SignUpScreenState extends State<SignUpScreen> {
     super.dispose();
   }
 
-  void _submit() {
-    if (_formKey.currentState?.validate() ?? false) {
-      final draft = AppState.instance.draft;
-      draft.name = _nameController.text.trim();
-      draft.email = _emailController.text.trim();
-      Navigator.of(context).pushNamed(AppRoutes.healthConsent);
+  Future<void> _submit() async {
+    if (!(_formKey.currentState?.validate() ?? false)) return;
+    final state = context.read<AppState>();
+    if (!state.accountsAvailable) return _continueWithoutAccount();
+
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
+    setState(() => _busy = true);
+    final SignUpResult result;
+    try {
+      result = await state.signUp(
+        name: _nameController.text,
+        email: _emailController.text,
+        password: _passwordController.text,
+      );
+    } on AuthFailure catch (f) {
+      if (mounted) setState(() => _busy = false);
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(f.message)));
+      return;
     }
+    if (!mounted) return;
+    setState(() => _busy = false);
+    if (result == SignUpResult.signedIn) {
+      if (!state.hasCloudConsent) {
+        await navigator.push(AppRoutes.pushCloudConsent());
+        if (!mounted) return;
+      }
+      navigator.pushNamed(AppRoutes.healthConsent);
+      return;
+    }
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        icon: const Icon(Icons.mark_email_unread_rounded),
+        title: const Text('E-postanı doğrula'),
+        content: Text(
+          '${_emailController.text.trim()} adresine bir doğrulama bağlantısı '
+          'gönderdik. Bağlantıyı bu telefonda açtıktan sonra giriş yapabilirsin.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Tamam'),
+          ),
+        ],
+      ),
+    );
+    if (mounted) navigator.pushReplacementNamed(AppRoutes.login);
+  }
+
+  /// Local-only use: no account, the data stays on this phone. The name
+  /// (if typed) still personalises the profile.
+  void _continueWithoutAccount() {
+    final draft = context.read<AppState>().draft;
+    draft.name = _nameController.text.trim();
+    draft.email = _emailController.text.trim();
+    Navigator.of(context).pushNamed(AppRoutes.healthConsent);
   }
 
   @override
@@ -95,7 +151,9 @@ class _SignUpScreenState extends State<SignUpScreen> {
                           prefixIcon: Icon(Icons.mail_outline_rounded),
                         ),
                         validator: (value) =>
-                            (value == null || value.trim().isEmpty) ? 'E-posta gerekli' : null,
+                            (value == null || value.trim().isEmpty)
+                                ? 'E-posta gerekli'
+                                : validateEmail(value),
                       ),
                       const SizedBox(height: 24),
                       Text('Şifre', style: textTheme.titleSmall),
@@ -114,8 +172,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                                 setState(() => _obscurePassword = !_obscurePassword),
                           ),
                         ),
-                        validator: (value) =>
-                            (value == null || value.length < 8) ? 'En az 8 karakter girin' : null,
+                        validator: (value) => validatePassword(value ?? ''),
                       ),
                       const SizedBox(height: 8),
                       Text(
@@ -126,9 +183,21 @@ class _SignUpScreenState extends State<SignUpScreen> {
                       SizedBox(
                         width: double.infinity,
                         child: ElevatedButton(
-                          onPressed: _submit,
+                          onPressed: _busy ? null : _submit,
                           child: const Text('Kayıt ol'),
                         ),
+                      ),
+                      const SizedBox(height: 8),
+                      Center(
+                        child: TextButton(
+                          onPressed: _continueWithoutAccount,
+                          child: const Text('Hesapsız devam et'),
+                        ),
+                      ),
+                      Text(
+                        'Hesapsız kullanımda verilerin yalnızca bu telefonda kalır.',
+                        textAlign: TextAlign.center,
+                        style: textTheme.bodySmall,
                       ),
                       const SizedBox(height: 24),
                       Row(

@@ -29,7 +29,7 @@ void main() {
   });
 
   test('every user table carries the shared sync columns', () async {
-    for (final table in db.allTables) {
+    for (final table in db.userTables) {
       final columns = table.$columns.map((c) => c.name).toSet();
       expect(
         columns,
@@ -39,6 +39,7 @@ void main() {
           'updated_at',
           'deleted_at',
           'synced_at',
+          'server_updated_at',
         ]),
         reason: table.actualTableName,
       );
@@ -55,8 +56,17 @@ void main() {
     expect(rows, hasLength(2));
   });
 
-  test('schema version is 1', () {
-    expect(db.schemaVersion, 1);
+  test('sync_state bookkeeping table exists and is not a user table', () async {
+    final rows = await db
+        .customSelect(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'sync_state'")
+        .get();
+    expect(rows, hasLength(1));
+    expect(db.userTables, isNot(contains(db.syncState)));
+  });
+
+  test('schema version is 2', () {
+    expect(db.schemaVersion, 2);
     expect(db.executor, isA<QueryExecutor>());
   });
 }

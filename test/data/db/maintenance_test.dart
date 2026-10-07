@@ -48,6 +48,27 @@ void main() {
         reason: 'rows that were never deleted stay');
   });
 
+  test('with sync on, only deletions that reached the cloud are purged',
+      () async {
+    Future<void> food(String id, int deletedAt, int? syncedAt) =>
+        db.foodLogDao.insertEntry(FoodLogEntriesCompanion.insert(
+          id: id, createdAt: 0, updatedAt: deletedAt,
+          deletedAt: Value(deletedAt), syncedAt: Value(syncedAt),
+          date: '2026-09-01', meal: 'lunch', foodName: id,
+          servingLabel: '1', amount: 1, kcal: 1, proteinG: 0, carbsG: 0,
+          fatG: 0, source: 'catalog', loggedAt: 0,
+        ));
+    final old = daysAgo(40);
+    await food('never-synced', old, null);
+    await food('synced-before-delete', old, old - 1000);
+    await food('delete-synced', old, old + 5);
+
+    await db.purgeSoftDeleted(now, requireSynced: true);
+    final ids =
+        (await db.select(db.foodLogEntries).get()).map((r) => r.id).toSet();
+    expect(ids, {'never-synced', 'synced-before-delete'});
+  });
+
   test('wipeAllData physically empties every table', () async {
     await seed();
     await db.wipeAllData();

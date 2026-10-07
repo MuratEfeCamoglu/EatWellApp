@@ -8,7 +8,8 @@ import '../../widgets/app_back_button.dart';
 import '../../widgets/section_card.dart';
 
 /// Denge's Settings screen (project/Settings.dc.html / Settings-dark.dc.html):
-/// grouped notification/reminder/appearance/account rows, "Tüm verilerimi
+/// grouped reminder/appearance/account rows (reminders open the shared
+/// [NotificationsScreen]), "Tüm verilerimi
 /// sil" (KVKK: erase everything stored on the device) and a log-out button.
 /// Reached from the Profile tab's gear icon / "Ayarlar" row.
 class SettingsScreen extends StatefulWidget {
@@ -19,11 +20,31 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  // These notification toggles have no backend to persist to; they are kept
-  // as local UI state only, matching the design's default values.
-  bool _mealReminders = true;
-  bool _waterReminders = true;
-  bool _weeklySummary = false;
+  Future<void> _confirmSignOut() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Çıkış yapılsın mı?'),
+        content: const Text(
+          'Hesabından çıkış yapılacak. Bu telefondaki kayıtların silinmez.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Vazgeç'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Çıkış yap'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    await context.read<AppState>().signOut();
+    messenger.showSnackBar(const SnackBar(content: Text('Çıkış yapıldı')));
+  }
 
   Future<void> _confirmDeleteAll() async {
     final confirmed = await showDialog<bool>(
@@ -98,68 +119,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     const SizedBox(height: 8),
                     SectionCard(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: Column(
-                        children: [
-                          _SwitchRow(
-                            icon: Icons.restaurant_menu_rounded,
-                            title: 'Öğün hatırlatıcıları',
-                            subtitle: 'Öğün saatinde bildirim al',
-                            value: _mealReminders,
-                            onChanged: (v) =>
-                                setState(() => _mealReminders = v),
-                          ),
-                          _SwitchRow(
-                            icon: Icons.water_drop_rounded,
-                            title: 'Su hatırlatıcıları',
-                            subtitle: 'Her 2 saatte bir, 09:00–21:00',
-                            value: _waterReminders,
-                            showTopDivider: true,
-                            onChanged: (v) =>
-                                setState(() => _waterReminders = v),
-                          ),
-                          _SwitchRow(
-                            icon: Icons.insights_rounded,
-                            title: 'Haftalık özet',
-                            subtitle: 'Pazar akşamları ilerleme raporu',
-                            value: _weeklySummary,
-                            showTopDivider: true,
-                            onChanged: (v) =>
-                                setState(() => _weeklySummary = v),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-                    _SectionHeader('HATIRLATMA SAATLERİ'),
-                    const SizedBox(height: 8),
-                    SectionCard(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: Column(
-                        children: [
-                          _TimeRow(
-                            icon: Icons.free_breakfast_rounded,
-                            title: 'Kahvaltı',
-                            time: '08:30',
-                          ),
-                          _TimeRow(
-                            icon: Icons.wb_sunny_rounded,
-                            title: 'Öğle yemeği',
-                            time: '12:30',
-                            showTopDivider: true,
-                          ),
-                          _TimeRow(
-                            icon: Icons.nightlight_round,
-                            title: 'Akşam yemeği',
-                            time: '19:00',
-                            showTopDivider: true,
-                          ),
-                          _TimeRow(
-                            icon: Icons.water_drop_rounded,
-                            title: 'Su aralığı',
-                            time: '2 saat',
-                            showTopDivider: true,
-                          ),
-                        ],
+                      child: Consumer<AppState>(
+                        builder: (context, state, _) => _NavRow(
+                          icon: Icons.notifications_none_rounded,
+                          title: 'Hatırlatıcılar',
+                          trailingText: state.notificationSettings.anyEnabled
+                              ? 'Açık'
+                              : 'Kapalı',
+                          onTap: () => Navigator.of(context)
+                              .push(AppRoutes.pushNotifications()),
+                        ),
                       ),
                     ),
                     const SizedBox(height: 24),
@@ -225,23 +194,63 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                     ),
                     const SizedBox(height: 24),
-                    SizedBox(
-                      width: double.infinity,
-                      height: 56,
-                      child: ElevatedButton.icon(
-                        onPressed: () {},
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor:
-                              scheme.error.withValues(alpha: 0.12),
-                          foregroundColor: scheme.error,
-                          elevation: 0,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
+                    Consumer<AppState>(
+                      builder: (context, state, _) {
+                        final account = state.account;
+                        if (account != null) {
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              SectionCard(
+                                padding: const EdgeInsets.symmetric(horizontal: 16),
+                                child: _NavRow(
+                                  icon: Icons.cloud_outlined,
+                                  title: 'Bulut yedekleme',
+                                  trailingText:
+                                      state.hasCloudConsent ? 'Açık' : 'Kapalı',
+                                  onTap: () => Navigator.of(context)
+                                      .push(AppRoutes.pushCloudConsent()),
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              Text(
+                                'Giriş yapıldı: ${account.email}',
+                                textAlign: TextAlign.center,
+                                style: textTheme.bodyMedium,
+                              ),
+                              const SizedBox(height: 8),
+                              SizedBox(
+                                height: 56,
+                                child: ElevatedButton.icon(
+                                  onPressed: _confirmSignOut,
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor:
+                                        scheme.error.withValues(alpha: 0.12),
+                                    foregroundColor: scheme.error,
+                                    elevation: 0,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(16),
+                                    ),
+                                  ),
+                                  icon: const Icon(Icons.logout_rounded, size: 20),
+                                  label: const Text('Çıkış yap'),
+                                ),
+                              ),
+                            ],
+                          );
+                        }
+                        // Local-only builds have no accounts to sign in to.
+                        if (!state.accountsAvailable) return const SizedBox.shrink();
+                        return SizedBox(
+                          height: 56,
+                          child: OutlinedButton.icon(
+                            onPressed: () => Navigator.of(context)
+                                .pushNamed(AppRoutes.login),
+                            icon: const Icon(Icons.login_rounded, size: 20),
+                            label: const Text('Giriş yap veya hesap oluştur'),
                           ),
-                        ),
-                        icon: const Icon(Icons.logout_rounded, size: 20),
-                        label: const Text('Çıkış yap'),
-                      ),
+                        );
+                      },
                     ),
                     const SizedBox(height: 16),
                     Center(
@@ -308,7 +317,6 @@ class _SwitchRow extends StatelessWidget {
     required this.subtitle,
     required this.value,
     required this.onChanged,
-    this.showTopDivider = false,
   });
 
   final IconData icon;
@@ -316,17 +324,11 @@ class _SwitchRow extends StatelessWidget {
   final String subtitle;
   final bool value;
   final ValueChanged<bool> onChanged;
-  final bool showTopDivider;
 
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
     return Container(
-      decoration: showTopDivider
-          ? BoxDecoration(
-              border:
-                  Border(top: BorderSide(color: context.dengeColors.divider)))
-          : null,
       constraints: const BoxConstraints(minHeight: 64),
       child: Row(
         children: [
@@ -349,57 +351,6 @@ class _SwitchRow extends StatelessWidget {
             ),
           ),
           Switch(value: value, onChanged: onChanged),
-        ],
-      ),
-    );
-  }
-}
-
-class _TimeRow extends StatelessWidget {
-  const _TimeRow({
-    required this.icon,
-    required this.title,
-    required this.time,
-    this.showTopDivider = false,
-  });
-
-  final IconData icon;
-  final String title;
-  final String time;
-  final bool showTopDivider;
-
-  @override
-  Widget build(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
-    final scheme = Theme.of(context).colorScheme;
-    return Container(
-      decoration: showTopDivider
-          ? BoxDecoration(
-              border:
-                  Border(top: BorderSide(color: context.dengeColors.divider)))
-          : null,
-      constraints: const BoxConstraints(minHeight: 64),
-      child: Row(
-        children: [
-          _RowIcon(icon),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(title,
-                style: textTheme.bodyLarge
-                    ?.copyWith(fontWeight: FontWeight.w700)),
-          ),
-          TextButton(
-            onPressed: () {},
-            style: TextButton.styleFrom(
-              backgroundColor: scheme.primaryContainer,
-              foregroundColor: scheme.onPrimaryContainer,
-              minimumSize: const Size(88, 48),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
-            ),
-            child: Text(time,
-                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
-          ),
         ],
       ),
     );

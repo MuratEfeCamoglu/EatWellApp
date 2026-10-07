@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../../data/app_state.dart';
+import '../../data/auth.dart';
 import '../../router.dart';
 import '../../widgets/app_back_button.dart';
 
@@ -17,6 +19,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _obscurePassword = true;
+  bool _busy = false;
 
   @override
   void dispose() {
@@ -25,20 +28,44 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  void _submit() {
-    if (_formKey.currentState?.validate() ?? false) {
-      // There's no real backend to authenticate against — if this device
-      // never finished setup there's nothing to "log back into", so route
-      // there instead of a blank main shell.
-      // The wizard also requires KVKK consent (F20) first.
-      final state = AppState.instance;
-      final next = state.setupComplete
-          ? AppRoutes.main
-          : state.hasConsent
-              ? AppRoutes.setupGender
-              : AppRoutes.healthConsent;
-      Navigator.of(context).pushNamedAndRemoveUntil(next, (route) => false);
+  /// After signing in: the main shell if this device has a profile,
+  /// otherwise the consent page / setup wizard (the wizard requires KVKK
+  /// consent, F20).
+  void _routeNext(AppState state) {
+    final next = state.setupComplete
+        ? AppRoutes.main
+        : state.hasConsent
+            ? AppRoutes.setupGender
+            : AppRoutes.healthConsent;
+    Navigator.of(context).pushNamedAndRemoveUntil(next, (route) => false);
+  }
+
+  Future<void> _submit() async {
+    if (!(_formKey.currentState?.validate() ?? false)) return;
+    final state = context.read<AppState>();
+    // Builds without Supabase configured stay local-only, as before.
+    if (!state.accountsAvailable) return _routeNext(state);
+
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _busy = true);
+    try {
+      await state.signIn(
+          email: _emailController.text, password: _passwordController.text);
+    } on AuthFailure catch (f) {
+      if (mounted) setState(() => _busy = false);
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(f.message)));
+      return;
     }
+    if (!mounted) return;
+    // Cloud backup is opt-in; accepting also pulls this account's profile,
+    // so a second device lands straight in the app.
+    if (!state.hasCloudConsent) {
+      await Navigator.of(context).push(AppRoutes.pushCloudConsent());
+      if (!mounted) return;
+    }
+    _routeNext(state);
   }
 
   @override
@@ -112,7 +139,9 @@ class _LoginScreenState extends State<LoginScreen> {
                       Align(
                         alignment: Alignment.centerRight,
                         child: TextButton(
-                          onPressed: () {},
+                          onPressed: () => Navigator.of(context).push(
+                              AppRoutes.pushForgotPassword(
+                                  initialEmail: _emailController.text.trim())),
                           child: const Text('Şifremi unuttum'),
                         ),
                       ),
@@ -120,7 +149,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       SizedBox(
                         width: double.infinity,
                         child: ElevatedButton(
-                          onPressed: _submit,
+                          onPressed: _busy ? null : _submit,
                           child: const Text('Giriş yap'),
                         ),
                       ),

@@ -154,7 +154,8 @@ class ProfileScreen extends StatelessWidget {
                               _SquareIconButton(
                                 icon: Icons.edit_rounded,
                                 semanticLabel: 'Profili düzenle',
-                                onTap: () {},
+                                onTap: () => Navigator.of(context)
+                                    .push(AppRoutes.pushPersonalInfo()),
                               ),
                             ],
                           ),
@@ -331,7 +332,8 @@ class ProfileScreen extends StatelessWidget {
                           _MenuRow(
                             icon: Icons.person_outline_rounded,
                             label: 'Kişisel bilgiler',
-                            onTap: () {},
+                            onTap: () => Navigator.of(context)
+                                .push(AppRoutes.pushPersonalInfo()),
                           ),
                           _MenuRow(
                             icon: Icons.track_changes_rounded,
@@ -339,13 +341,18 @@ class ProfileScreen extends StatelessWidget {
                             trailingText:
                                 '${_thousands(user.calorieGoal)} kcal',
                             showTopDivider: true,
-                            onTap: () {},
+                            onTap: () =>
+                                Navigator.of(context).push(AppRoutes.pushGoals()),
                           ),
                           _MenuRow(
                             icon: Icons.notifications_none_rounded,
                             label: 'Bildirimler',
+                            trailingText: state.notificationSettings.anyEnabled
+                                ? 'Açık'
+                                : 'Kapalı',
                             showTopDivider: true,
-                            onTap: () {},
+                            onTap: () => Navigator.of(context)
+                                .push(AppRoutes.pushNotifications()),
                           ),
                           _MenuRow(
                             icon: Icons.tune_rounded,

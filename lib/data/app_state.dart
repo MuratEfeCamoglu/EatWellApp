@@ -4,40 +4,27 @@ import 'dart:developer' as developer;
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'auth.dart';
 import 'custom_food.dart';
 import 'db/app_database.dart';
 import 'db/date_key.dart';
 import 'health_consent.dart';
 import 'mock_data.dart';
 import 'models.dart';
+import 'nutrition_targets.dart';
+import 'profile_enums.dart';
+import 'reminders.dart';
 import 'repositories/custom_food_repository.dart';
 import 'repositories/food_log_repository.dart';
 import 'repositories/water_repository.dart';
 import 'repositories/weight_repository.dart';
 import 'stats/daily_summary.dart';
 import 'stats/streak.dart';
+import 'sync/profile_snapshot.dart';
+import 'sync/sync_backend.dart';
 
-enum Gender { female, male }
-
-enum ActivityLevel { sedentary, light, moderate, active }
-
-extension ActivityLevelMultiplier on ActivityLevel {
-  /// Standard Harris/Mifflin activity multipliers used to turn BMR into TDEE.
-  double get multiplier {
-    switch (this) {
-      case ActivityLevel.sedentary:
-        return 1.2;
-      case ActivityLevel.light:
-        return 1.375;
-      case ActivityLevel.moderate:
-        return 1.55;
-      case ActivityLevel.active:
-        return 1.725;
-    }
-  }
-}
-
-enum WeightGoal { lose, maintain, gain }
+// Screens import these through app_state.dart.
+export 'profile_enums.dart';
 
 enum TextScaleOption { small, normal, large, extraLarge }
 
@@ -124,6 +111,20 @@ class AppState extends ChangeNotifier {
   static const _kAllergyNote = 'user_allergy_note';
   static const _kConsentVersion = 'consent_version';
   static const _kConsentAt = 'consent_at';
+  static const _kGender = 'user_gender';
+  static const _kAge = 'user_age';
+  static const _kActivity = 'user_activity';
+  static const _kGoalType = 'user_goal_type';
+  static const _kNotifications = 'notification_settings';
+  static const _kProfileUpdatedAt = 'profile_updated_at';
+  static const _kCloudConsentVersion = 'cloud_consent_version';
+  static const _kCloudConsentAt = 'cloud_consent_at';
+
+  /// Version of the cloud-storage consent text (CLAUDE.md §13.5). Separate
+  /// from the health-data consent: the app works fully without the cloud,
+  /// so refusing this must never block anything else. Bump when the text
+  /// changes materially.
+  static const kCloudConsentVersion = '2026-10-cloud-1';
 
   /// Set once the profile weight of a pre-database install has been copied
   /// into `weight_entries` (or setup recorded a first weight itself), so
@@ -147,6 +148,291 @@ class AppState extends ChangeNotifier {
   ConsentRecord? consent;
 
   bool get hasConsent => consent != null;
+
+  /// Setup answers kept for the profile screens and goal suggestions. Null
+  /// for installs that completed setup before these were stored.
+  Gender? gender;
+  int? age;
+  ActivityLevel? activityLevel;
+  WeightGoal? weightGoal;
+
+  /// [weightGoal], or — when it was never stored — the direction implied
+  /// by the current and goal weights.
+  WeightGoal get effectiveGoal {
+    final stored = weightGoal;
+    if (stored != null) return stored;
+    final delta = user.goalWeightKg - user.weightKg;
+    if (delta.abs() < 0.5) return WeightGoal.maintain;
+    return delta < 0 ? WeightGoal.lose : WeightGoal.gain;
+  }
+
+  /// Reminder choices (all off until the user opts in).
+  NotificationSettings notificationSettings = const NotificationSettings();
+
+  /// The cloud; null for local-only builds (see `main`).
+  SyncBackend? syncBackend;
+
+  /// When the user agreed to store their data in the cloud (null = not).
+  DateTime? cloudConsentAt;
+  String? _cloudConsentVersion;
+  bool get hasCloudConsent => _cloudConsentVersion == kCloudConsentVersion;
+
+  /// Last local profile change (UTC ms); decides which side wins a sync.
+  int _profileUpdatedAt = 0;
+  Future<void>? _profileSync;
+  bool _profileSyncAgain = false;
+
+  /// Schedules the actual OS notifications; `main` installs the platform
+  /// implementation, tests keep the no-op or a fake.
+  ReminderScheduler reminders = const NoopReminderScheduler();
+
+  /// Account provider; Supabase when configured (see `main`), otherwise
+  /// unavailable and the app is local-only.
+  AuthService get auth => _auth;
+  AuthService _auth = const UnavailableAuthService();
+  StreamSubscription<AuthEvent>? _authSub;
+  bool _pendingPasswordRecovery = false;
+
+  set auth(AuthService service) {
+    _authSub?.cancel();
+    _auth = service;
+    _authSub = service.events.listen((event) {
+      if (event == AuthEvent.passwordRecovery) _pendingPasswordRecovery = true;
+      notifyListeners();
+    });
+  }
+
+  bool get accountsAvailable => _auth.isAvailable;
+  AuthUser? get account => _auth.currentUser;
+  bool get isSignedIn => account != null;
+
+  /// True once after a password-reset link opened the app; the app root
+  /// then shows the "new password" screen.
+  bool takePendingPasswordRecovery() {
+    final pending = _pendingPasswordRecovery;
+    _pendingPasswordRecovery = false;
+    return pending;
+  }
+
+  /// Creates an account; the name and e-mail also seed the setup wizard.
+  /// Throws [AuthFailure].
+  Future<SignUpResult> signUp({
+    required String name,
+    required String email,
+    required String password,
+  }) async {
+    final result = await _auth.signUp(
+        email: email.trim(), password: password, name: name.trim());
+    draft
+      ..name = name.trim()
+      ..email = email.trim();
+    notifyListeners();
+    return result;
+  }
+
+  /// Throws [AuthFailure]. When this device has no profile yet, the
+  /// account's name and e-mail pre-fill the setup wizard.
+  Future<void> signIn({required String email, required String password}) async {
+    await _auth.signIn(email: email.trim(), password: password);
+    final user = account;
+    if (!setupComplete && user != null) {
+      draft
+        ..name = user.name
+        ..email = user.email;
+    }
+    notifyListeners();
+    await syncProfile();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Cloud consent and profile sync (CLAUDE.md §13, Aşama B3)
+  // ---------------------------------------------------------------------------
+
+  /// Records the cloud-storage consent and syncs right away.
+  Future<void> giveCloudConsent() async {
+    final now = clock();
+    _cloudConsentVersion = kCloudConsentVersion;
+    cloudConsentAt = now;
+    notifyListeners();
+    final prefs = await _prefsOrLoad();
+    await Future.wait([
+      prefs.setString(_kCloudConsentVersion, kCloudConsentVersion),
+      prefs.setString(_kCloudConsentAt, now.toIso8601String()),
+    ]);
+    await syncProfile();
+  }
+
+  /// Stops syncing. Data already in the cloud stays until the user deletes
+  /// it (account deletion, Aşama B6).
+  Future<void> revokeCloudConsent() async {
+    _cloudConsentVersion = null;
+    cloudConsentAt = null;
+    notifyListeners();
+    final prefs = await _prefsOrLoad();
+    await Future.wait([
+      prefs.remove(_kCloudConsentVersion),
+      prefs.remove(_kCloudConsentAt),
+    ]);
+  }
+
+  /// Marks the profile as changed now and pushes it in the background.
+  Future<void> _touchProfile() async {
+    _profileUpdatedAt = clock().toUtc().millisecondsSinceEpoch;
+    final prefs = await _prefsOrLoad();
+    await prefs.setInt(_kProfileUpdatedAt, _profileUpdatedAt);
+    unawaited(syncProfile());
+  }
+
+  /// This device's profile as a sync value; null before setup.
+  ProfileSnapshot? get localProfileSnapshot {
+    if (!setupComplete) return null;
+    final c = consent;
+    return ProfileSnapshot(
+      createdAt: (memberSince ?? DateTime.fromMillisecondsSinceEpoch(_profileUpdatedAt))
+          .toUtc()
+          .millisecondsSinceEpoch,
+      updatedAt: _profileUpdatedAt,
+      name: user.name,
+      email: user.email,
+      gender: gender,
+      age: age,
+      heightCm: user.heightCm > 0 ? user.heightCm : null,
+      weightKg: user.weightKg > 0 ? user.weightKg : null,
+      activityLevel: activityLevel,
+      weightGoal: weightGoal,
+      goalWeightKg: user.goalWeightKg > 0 ? user.goalWeightKg : null,
+      weeklyPaceKg: weeklyPaceKg,
+      calorieGoal: user.calorieGoal,
+      proteinGoalG: user.proteinGoalG,
+      carbsGoalG: user.carbsGoalG,
+      fatGoalG: user.fatGoalG,
+      allergies: allergies.encodeAllergens(),
+      allergyNote: allergies.otherNote,
+      consentVersion: c?.version,
+      consentAt: c?.acceptedAt.toUtc().millisecondsSinceEpoch,
+    );
+  }
+
+  /// Adopts a newer profile from the cloud (e.g. on a second device).
+  Future<void> _applyProfile(ProfileSnapshot s) async {
+    final displayName = s.name.trim().isEmpty ? 'Kullanıcı' : s.name.trim();
+    user = UserProfile(
+      name: displayName,
+      initials: _initialsOf(displayName),
+      email: s.email,
+      streakDays: 0,
+      calorieGoal: s.calorieGoal,
+      proteinGoalG: s.proteinGoalG,
+      carbsGoalG: s.carbsGoalG,
+      fatGoalG: s.fatGoalG,
+      heightCm: s.heightCm ?? 0,
+      weightKg: s.weightKg ?? user.weightKg,
+      goalWeightKg: s.goalWeightKg ?? 0,
+    );
+    gender = s.gender;
+    age = s.age;
+    activityLevel = s.activityLevel;
+    weightGoal = s.weightGoal;
+    weeklyPaceKg = s.weeklyPaceKg ?? weeklyPaceKg;
+    allergies = AllergyProfile.decode(s.allergies, s.allergyNote);
+    final consentVersion = s.consentVersion, consentAt = s.consentAt;
+    if (consentVersion != null && consentAt != null) {
+      consent = ConsentRecord(
+        version: consentVersion,
+        acceptedAt:
+            DateTime.fromMillisecondsSinceEpoch(consentAt, isUtc: true).toLocal(),
+      );
+    }
+    setupComplete = true;
+    memberSince ??=
+        DateTime.fromMillisecondsSinceEpoch(s.createdAt, isUtc: true).toLocal();
+    _profileUpdatedAt = s.updatedAt;
+    notifyListeners();
+
+    final prefs = await _prefsOrLoad();
+    final c = consent;
+    await Future.wait([
+      prefs.setBool(_kSetupComplete, true),
+      // The weight history arrives with full sync (B5); don't let the
+      // legacy migration invent a duplicate first entry meanwhile.
+      prefs.setBool(_kWeightMigrated, true),
+      prefs.setInt(_kProfileUpdatedAt, _profileUpdatedAt),
+      prefs.setString(_kMemberSince, memberSince!.toIso8601String()),
+      prefs.setString(_kName, user.name),
+      prefs.setString(_kInitials, user.initials),
+      prefs.setString(_kEmail, user.email),
+      prefs.setInt(_kCalorieGoal, user.calorieGoal),
+      prefs.setInt(_kProteinGoal, user.proteinGoalG),
+      prefs.setInt(_kCarbsGoal, user.carbsGoalG),
+      prefs.setInt(_kFatGoal, user.fatGoalG),
+      prefs.setDouble(_kHeight, user.heightCm),
+      prefs.setDouble(_kWeight, user.weightKg),
+      prefs.setDouble(_kGoalWeight, user.goalWeightKg),
+      prefs.setDouble(_kWeeklyPace, weeklyPaceKg),
+      prefs.setStringList(_kAllergies, allergies.encodeAllergens()),
+      prefs.setString(_kAllergyNote, allergies.otherNote),
+      if (gender != null) prefs.setString(_kGender, gender!.name),
+      if (age != null) prefs.setInt(_kAge, age!),
+      if (activityLevel != null)
+        prefs.setString(_kActivity, activityLevel!.name),
+      if (weightGoal != null) prefs.setString(_kGoalType, weightGoal!.name),
+      if (c != null) prefs.setString(_kConsentVersion, c.version),
+      if (c != null) prefs.setString(_kConsentAt, c.acceptedAt.toIso8601String()),
+    ]);
+  }
+
+  /// Reconciles this device's profile with the cloud (newer wins). Does
+  /// nothing unless signed in with the cloud consent given; never throws —
+  /// a failed sync is retried on the next trigger. Concurrent calls share
+  /// one run (and trigger one more pass if something changed meanwhile).
+  Future<void> syncProfile() {
+    final backend = syncBackend;
+    if (backend == null || !isSignedIn || !hasCloudConsent) {
+      return Future.value();
+    }
+    final running = _profileSync;
+    if (running != null) {
+      _profileSyncAgain = true;
+      return running;
+    }
+    return _profileSync = () async {
+      try {
+        do {
+          _profileSyncAgain = false;
+          final remote = await backend.fetchProfile();
+          if (!hasCloudConsent || !isSignedIn) break;
+          final local = localProfileSnapshot;
+          switch (decideProfileSync(local: local, remote: remote)) {
+            case ProfileSyncAction.push:
+              await backend.upsertProfile(local!);
+            case ProfileSyncAction.pull:
+              await _applyProfile(remote!);
+            case ProfileSyncAction.none:
+              break;
+          }
+        } while (_profileSyncAgain);
+      } catch (e, st) {
+        developer.log('Profile sync failed', error: e, stackTrace: st);
+      } finally {
+        _profileSync = null;
+      }
+    }();
+  }
+
+  /// Ends the session. Local data stays on the device for now; clearing it
+  /// on sign-out arrives with sync (CLAUDE.md §13.6, Aşama B6).
+  Future<void> signOut() async {
+    await _auth.signOut();
+    notifyListeners();
+  }
+
+  /// Throws [AuthFailure].
+  Future<void> sendPasswordReset(String email) =>
+      _auth.sendPasswordReset(email.trim());
+
+  /// Throws [AuthFailure].
+  Future<void> updatePassword(String newPassword) =>
+      _auth.updatePassword(newPassword);
 
   /// The pace chosen during setup, persisted separately from [draft] (which
   /// resets each session) so screens like Profile can still show an
@@ -268,6 +554,7 @@ class AppState extends ChangeNotifier {
     user = user.copyWith(weightKg: kg);
     notifyListeners();
     await _prefs?.setDouble(_kWeight, kg);
+    await _touchProfile();
   }
 
   Future<void> _reloadWeights(WeightRepository repo) async {
@@ -341,6 +628,16 @@ class AppState extends ChangeNotifier {
 
     setupComplete = prefs.getBool(_kSetupComplete) ?? false;
     weeklyPaceKg = prefs.getDouble(_kWeeklyPace) ?? 0.5;
+    gender = enumByName(Gender.values, prefs.getString(_kGender));
+    age = prefs.getInt(_kAge);
+    activityLevel = enumByName(ActivityLevel.values, prefs.getString(_kActivity));
+    weightGoal = enumByName(WeightGoal.values, prefs.getString(_kGoalType));
+    notificationSettings =
+        NotificationSettings.fromJson(prefs.getString(_kNotifications));
+    _profileUpdatedAt = prefs.getInt(_kProfileUpdatedAt) ?? 0;
+    _cloudConsentVersion = prefs.getString(_kCloudConsentVersion);
+    final cloudAt = prefs.getString(_kCloudConsentAt);
+    cloudConsentAt = cloudAt == null ? null : DateTime.tryParse(cloudAt);
     final memberSinceStr = prefs.getString(_kMemberSince);
     memberSince = memberSinceStr == null ? null : DateTime.tryParse(memberSinceStr);
     if (setupComplete) {
@@ -362,6 +659,133 @@ class AppState extends ChangeNotifier {
     await _loadWeights(prefs);
     await _loadCustomFoods();
     notifyListeners();
+    unawaited(syncProfile());
+    if (notificationSettings.anyEnabled) {
+      // Re-schedule on every launch (time zone or OS state may have
+      // changed); never prompts — permission was asked when turned on.
+      try {
+        await reminders.apply(notificationSettings);
+      } catch (e, st) {
+        developer.log('Scheduling reminders failed', error: e, stackTrace: st);
+      }
+    }
+  }
+
+  static String _initialsOf(String displayName) {
+    final initials = displayName
+        .split(RegExp(r'\s+'))
+        .where((p) => p.isNotEmpty)
+        .take(2)
+        .map((p) => p[0].toUpperCase())
+        .join();
+    return initials.isEmpty ? '?' : initials;
+  }
+
+  Future<SharedPreferences> _prefsOrLoad() async =>
+      _prefs ??= await SharedPreferences.getInstance();
+
+  /// Saves the "Kişisel bilgiler" screen. Calorie and macro goals are left
+  /// alone; the goals screen offers to recalculate them.
+  Future<void> updatePersonalInfo({
+    required String name,
+    required String email,
+    required Gender? gender,
+    required int? age,
+    required double heightCm,
+    required ActivityLevel? activityLevel,
+  }) async {
+    final displayName = name.trim().isEmpty ? 'Kullanıcı' : name.trim();
+    user = user.copyWith(
+      name: displayName,
+      initials: _initialsOf(displayName),
+      email: email.trim(),
+      heightCm: heightCm,
+    );
+    this.gender = gender;
+    this.age = age;
+    this.activityLevel = activityLevel;
+    notifyListeners();
+
+    final prefs = await _prefsOrLoad();
+    await Future.wait([
+      prefs.setString(_kName, user.name),
+      prefs.setString(_kInitials, user.initials),
+      prefs.setString(_kEmail, user.email),
+      prefs.setDouble(_kHeight, heightCm),
+      if (gender != null) prefs.setString(_kGender, gender.name),
+      if (age != null) prefs.setInt(_kAge, age),
+      if (activityLevel != null) prefs.setString(_kActivity, activityLevel.name),
+    ]);
+    await _touchProfile();
+  }
+
+  /// The goals the setup formula gives for the stored profile, or null
+  /// while gender, age or activity level is unknown.
+  NutritionTargets? suggestedTargets({
+    required WeightGoal goal,
+    required double weeklyPaceKg,
+  }) {
+    final g = gender, a = age, act = activityLevel;
+    if (g == null || a == null || act == null) return null;
+    if (user.weightKg <= 0 || user.heightCm <= 0) return null;
+    return computeTargets(
+      gender: g,
+      age: a,
+      heightCm: user.heightCm,
+      weightKg: user.weightKg,
+      activity: act,
+      goal: goal,
+      weeklyPaceKg: weeklyPaceKg,
+    );
+  }
+
+  /// Saves the "Hedefler ve makrolar" screen.
+  Future<void> updateGoals({
+    required WeightGoal goal,
+    required double goalWeightKg,
+    required double weeklyPaceKg,
+    required int calorieGoal,
+    required int proteinG,
+    required int carbsG,
+    required int fatG,
+  }) async {
+    weightGoal = goal;
+    this.weeklyPaceKg = weeklyPaceKg;
+    user = user.copyWith(
+      goalWeightKg: goalWeightKg,
+      calorieGoal: calorieGoal,
+      proteinGoalG: proteinG,
+      carbsGoalG: carbsG,
+      fatGoalG: fatG,
+    );
+    notifyListeners();
+
+    final prefs = await _prefsOrLoad();
+    await Future.wait([
+      prefs.setString(_kGoalType, goal.name),
+      prefs.setDouble(_kGoalWeight, goalWeightKg),
+      prefs.setDouble(_kWeeklyPace, weeklyPaceKg),
+      prefs.setInt(_kCalorieGoal, calorieGoal),
+      prefs.setInt(_kProteinGoal, proteinG),
+      prefs.setInt(_kCarbsGoal, carbsG),
+      prefs.setInt(_kFatGoal, fatG),
+    ]);
+    await _touchProfile();
+  }
+
+  /// Saves reminder choices and (re)schedules them. Turning anything on
+  /// asks for the notification permission; returns false when it was
+  /// denied (the choice is still saved so it works once allowed in system
+  /// settings). Throws if scheduling itself fails.
+  Future<bool> updateNotificationSettings(NotificationSettings settings) async {
+    final granted =
+        settings.anyEnabled ? await reminders.requestPermission() : true;
+    notificationSettings = settings;
+    notifyListeners();
+    final prefs = await _prefsOrLoad();
+    await prefs.setString(_kNotifications, settings.toJson());
+    await reminders.apply(settings);
+    return granted;
   }
 
   /// "Tüm verilerimi sil": physically empties every database table, clears
@@ -383,6 +807,19 @@ class AppState extends ChangeNotifier {
     _loggedDates = const {};
     _memoryDeleted.clear();
     _waterGlasses = 0;
+    gender = null;
+    age = null;
+    activityLevel = null;
+    weightGoal = null;
+    notificationSettings = const NotificationSettings();
+    _profileUpdatedAt = 0;
+    _cloudConsentVersion = null;
+    cloudConsentAt = null;
+    try {
+      await reminders.apply(notificationSettings); // cancels everything
+    } catch (e, st) {
+      developer.log('Cancelling reminders failed', error: e, stackTrace: st);
+    }
     await load(db: db);
   }
 
@@ -478,7 +915,7 @@ class AppState extends ChangeNotifier {
       // (and any open/migration error to surface) right here.
       await db.customSelect('SELECT 1').get();
       try {
-        await db.purgeSoftDeleted(clock());
+        await db.purgeSoftDeleted(clock(), requireSynced: isSignedIn);
       } catch (e, st) {
         // Housekeeping only; never block the app on it.
         developer.log('Purging old deleted rows failed',
@@ -567,6 +1004,7 @@ class AppState extends ChangeNotifier {
 
   @override
   void dispose() {
+    _authSub?.cancel();
     _todaySub?.cancel();
     _midnightTimer?.cancel();
     super.dispose();
@@ -614,17 +1052,7 @@ class AppState extends ChangeNotifier {
       prefs.setString(_kConsentVersion, consent!.version),
       prefs.setString(_kConsentAt, now.toIso8601String()),
     ]);
-  }
-
-  /// Basal metabolic rate via the Mifflin-St Jeor equation.
-  double _bmr({
-    required Gender gender,
-    required double weightKg,
-    required double heightCm,
-    required int age,
-  }) {
-    final base = 10 * weightKg + 6.25 * heightCm - 5 * age;
-    return gender == Gender.male ? base + 5 : base - 161;
+    await _touchProfile();
   }
 
   /// A sensible default target weight for the current draft's goal, used to
@@ -650,63 +1078,38 @@ class AppState extends ChangeNotifier {
     final goalWeightKg =
         draft.goalWeightKg ?? suggestedGoalWeightKg(draft.goal, weightKg);
 
-    final bmr = _bmr(
+    final targets = computeTargets(
       gender: draft.gender,
-      weightKg: weightKg,
-      heightCm: heightCm,
       age: draft.age,
+      heightCm: heightCm,
+      weightKg: weightKg,
+      activity: draft.activityLevel,
+      goal: draft.goal,
+      weeklyPaceKg: draft.weeklyPaceKg,
     );
-    final tdee = bmr * draft.activityLevel.multiplier;
-
-    // 1 kg of body fat ~= 7700 kcal.
-    final dailyDeltaKcal = draft.weeklyPaceKg * 7700 / 7;
-    double calorieGoal;
-    switch (draft.goal) {
-      case WeightGoal.lose:
-        calorieGoal = tdee - dailyDeltaKcal;
-        break;
-      case WeightGoal.gain:
-        calorieGoal = tdee + dailyDeltaKcal;
-        break;
-      case WeightGoal.maintain:
-        calorieGoal = tdee;
-        break;
-    }
-    final floor = draft.gender == Gender.male ? 1500.0 : 1200.0;
-    calorieGoal = calorieGoal.clamp(floor, 4000.0);
-
-    final proteinGoalG = (weightKg * 1.8).round();
-    final fatGoalG = (calorieGoal * 0.27 / 9).round();
-    final proteinKcal = proteinGoalG * 4;
-    final fatKcal = fatGoalG * 9;
-    final carbsGoalG = ((calorieGoal - proteinKcal - fatKcal) / 4)
-        .round()
-        .clamp(0, 999);
 
     final trimmedName = draft.name.trim();
     final displayName = trimmedName.isEmpty ? 'Kullanıcı' : trimmedName;
-    final initials = displayName
-        .split(RegExp(r'\s+'))
-        .where((p) => p.isNotEmpty)
-        .take(2)
-        .map((p) => p[0].toUpperCase())
-        .join();
 
     user = UserProfile(
       name: displayName,
-      initials: initials.isEmpty ? '?' : initials,
+      initials: _initialsOf(displayName),
       email: draft.email.trim(),
       streakDays: 0,
-      calorieGoal: calorieGoal.round(),
-      proteinGoalG: proteinGoalG,
-      carbsGoalG: carbsGoalG,
-      fatGoalG: fatGoalG,
+      calorieGoal: targets.calories,
+      proteinGoalG: targets.proteinG,
+      carbsGoalG: targets.carbsG,
+      fatGoalG: targets.fatG,
       heightCm: heightCm,
       weightKg: weightKg,
       goalWeightKg: goalWeightKg,
     );
     setupComplete = true;
     weeklyPaceKg = draft.weeklyPaceKg;
+    gender = draft.gender;
+    age = draft.age;
+    activityLevel = draft.activityLevel;
+    weightGoal = draft.goal;
     final now = clock();
     memberSince = now;
     final weights = _weights;
@@ -746,7 +1149,12 @@ class AppState extends ChangeNotifier {
       prefs.setDouble(_kHeight, user.heightCm),
       prefs.setDouble(_kWeight, user.weightKg),
       prefs.setDouble(_kGoalWeight, user.goalWeightKg),
+      prefs.setString(_kGender, draft.gender.name),
+      prefs.setInt(_kAge, draft.age),
+      prefs.setString(_kActivity, draft.activityLevel.name),
+      prefs.setString(_kGoalType, draft.goal.name),
     ]);
+    await _touchProfile();
   }
 
   /// Adds [amount] servings (matching [food]'s serving size) of [food] to

@@ -1,12 +1,19 @@
 import 'package:denge/data/app_state.dart';
+import 'package:denge/data/auth.dart';
 import 'package:denge/data/custom_food.dart';
 import 'package:denge/data/db/app_database.dart';
+import 'package:denge/data/health_consent.dart';
 import 'package:denge/data/models.dart';
+import 'package:denge/data/reminders.dart';
+import 'package:denge/data/sync/profile_snapshot.dart';
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart' show ThemeMode;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../helpers/fake_auth_service.dart';
+import '../helpers/fake_reminder_scheduler.dart';
+import '../helpers/fake_sync_backend.dart';
 import 'food_log_entry_test.dart' show menemen;
 
 void main() {
@@ -420,6 +427,401 @@ void main() {
       now = DateTime(2026, 10, 7, 12);
       await loaded(db: db);
       expect(await db.select(db.foodLogEntries).get(), isEmpty);
+    });
+  });
+
+  group('profile menus', () {
+    Future<AppState> setUpUser({AppDatabase? db}) async {
+      final state = await loaded(db: db);
+      state.draft
+        ..name = 'Ayşe Yılmaz'
+        ..gender = Gender.female
+        ..age = 27
+        ..heightCm = 168
+        ..weightKg = 70
+        ..activityLevel = ActivityLevel.moderate
+        ..goal = WeightGoal.lose
+        ..weeklyPaceKg = 0.5;
+      await state.completeSetup();
+      return state;
+    }
+
+    test('setup now remembers gender, age, activity and goal type', () async {
+      final state = await setUpUser();
+      expect(state.user.calorieGoal, 1704, reason: 'same maths as before');
+      final again = await loaded();
+      expect(again.gender, Gender.female);
+      expect(again.age, 27);
+      expect(again.activityLevel, ActivityLevel.moderate);
+      expect(again.weightGoal, WeightGoal.lose);
+    });
+
+    test('updatePersonalInfo persists and refreshes the initials', () async {
+      await setUpUser();
+      final state = await loaded();
+      await state.updatePersonalInfo(
+        name: '  Mehmet Can Demir ',
+        email: 'mehmet@ornek.com',
+        gender: Gender.male,
+        age: 31,
+        heightCm: 181.5,
+        activityLevel: ActivityLevel.active,
+      );
+      expect(state.user.name, 'Mehmet Can Demir');
+      expect(state.user.initials, 'MC');
+
+      final again = await loaded();
+      expect(again.user.name, 'Mehmet Can Demir');
+      expect(again.user.email, 'mehmet@ornek.com');
+      expect(again.user.heightCm, 181.5);
+      expect(again.gender, Gender.male);
+      expect(again.age, 31);
+      expect(again.activityLevel, ActivityLevel.active);
+      expect(again.user.calorieGoal, 1704,
+          reason: 'goals only change from the goals screen');
+    });
+
+    test('suggestedTargets uses the stored profile, null when incomplete',
+        () async {
+      final state = await setUpUser();
+      final t = state.suggestedTargets(
+          goal: WeightGoal.maintain, weeklyPaceKg: 0.5)!;
+      expect(t.calories, 2254);
+
+      SharedPreferences.setMockInitialValues({
+        'setup_complete': true,
+        'user_weight': 70.0,
+        'user_height': 168.0,
+      });
+      final legacy = await loaded();
+      expect(legacy.gender, isNull);
+      expect(
+          legacy.suggestedTargets(goal: WeightGoal.lose, weeklyPaceKg: 0.5),
+          isNull);
+    });
+
+    test('updateGoals persists goal type, weight, pace, kcal and macros',
+        () async {
+      await setUpUser();
+      final state = await loaded();
+      await state.updateGoals(
+        goal: WeightGoal.gain,
+        goalWeightKg: 74,
+        weeklyPaceKg: 0.25,
+        calorieGoal: 2500,
+        proteinG: 140,
+        carbsG: 300,
+        fatG: 80,
+      );
+      final again = await loaded();
+      expect(again.weightGoal, WeightGoal.gain);
+      expect(again.user.goalWeightKg, 74);
+      expect(again.weeklyPaceKg, 0.25);
+      expect(again.user.calorieGoal, 2500);
+      expect(
+          (again.user.proteinGoalG, again.user.carbsGoalG, again.user.fatGoalG),
+          (140, 300, 80));
+    });
+
+    test('effectiveGoal falls back to the weights when the type is unknown',
+        () async {
+      SharedPreferences.setMockInitialValues({
+        'setup_complete': true,
+        'user_weight': 80.0,
+        'user_goal_weight': 72.0,
+      });
+      expect((await loaded()).effectiveGoal, WeightGoal.lose);
+      SharedPreferences.setMockInitialValues({
+        'setup_complete': true,
+        'user_weight': 80.0,
+        'user_goal_weight': 80.2,
+      });
+      expect((await loaded()).effectiveGoal, WeightGoal.maintain);
+    });
+  });
+
+  group('notifications', () {
+    test('enabling asks for permission, saves and schedules', () async {
+      final fake = FakeReminderScheduler();
+      final state = await loaded();
+      state.reminders = fake;
+
+      final granted = await state.updateNotificationSettings(
+          const NotificationSettings(mealReminders: true));
+      expect(granted, isTrue);
+      expect(fake.permissionRequests, 1);
+      expect(fake.applied.last.mealReminders, isTrue);
+
+      final again = await loaded();
+      expect(again.notificationSettings.mealReminders, isTrue);
+    });
+
+    test('a denied permission is reported but the choice is kept', () async {
+      final fake = FakeReminderScheduler()..grant = false;
+      final state = await loaded();
+      state.reminders = fake;
+      final granted = await state.updateNotificationSettings(
+          const NotificationSettings(waterReminders: true));
+      expect(granted, isFalse);
+      expect(state.notificationSettings.waterReminders, isTrue);
+    });
+
+    test('turning everything off does not ask for permission', () async {
+      final fake = FakeReminderScheduler();
+      final state = await loaded();
+      state.reminders = fake;
+      await state.updateNotificationSettings(const NotificationSettings());
+      expect(fake.permissionRequests, 0);
+      expect(fake.applied.single.anyEnabled, isFalse);
+    });
+
+    test('saved reminders are re-scheduled on launch without a prompt',
+        () async {
+      SharedPreferences.setMockInitialValues({
+        'notification_settings':
+            const NotificationSettings(weeklySummary: true).toJson(),
+      });
+      final fake = FakeReminderScheduler();
+      final state = AppState.forTesting()
+        ..clock = (() => now)
+        ..reminders = fake;
+      addTearDown(state.dispose);
+      await state.load();
+      expect(fake.applied.single.weeklySummary, isTrue);
+      expect(fake.permissionRequests, 0);
+    });
+
+    test('deleteAllData cancels every reminder', () async {
+      final fake = FakeReminderScheduler();
+      final state = await loaded();
+      state.reminders = fake;
+      await state.updateNotificationSettings(const NotificationSettings(
+          mealReminders: true, waterReminders: true));
+      await state.deleteAllData();
+      expect(state.notificationSettings.anyEnabled, isFalse);
+      expect(fake.applied.last.anyEnabled, isFalse);
+    });
+  });
+
+  group('account', () {
+    late FakeAuthService auth;
+
+    Future<AppState> withAuth() async {
+      auth = FakeAuthService();
+      final state = AppState.forTesting()
+        ..clock = (() => now)
+        ..auth = auth;
+      addTearDown(state.dispose);
+      await state.load();
+      return state;
+    }
+
+    test('without Supabase configured the app reports no account system',
+        () async {
+      final state = await loaded();
+      expect(state.accountsAvailable, isFalse);
+      expect(state.account, isNull);
+    });
+
+    test('sign up keeps name and e-mail for the setup wizard', () async {
+      final state = await withAuth();
+      final result = await state.signUp(
+          name: ' Ayşe Yılmaz ', email: ' ayse@ornek.com ', password: 'sifre123');
+      expect(result, SignUpResult.signedIn);
+      expect(state.account?.email, 'ayse@ornek.com');
+      expect(state.draft.name, 'Ayşe Yılmaz');
+      expect(state.draft.email, 'ayse@ornek.com');
+    });
+
+    test('sign in prefills the wizard when this device has no profile',
+        () async {
+      final state = await withAuth();
+      auth.addUser('can@ornek.com', 'sifre123', name: 'Can');
+      await state.signIn(email: 'can@ornek.com', password: 'sifre123');
+      expect(state.isSignedIn, isTrue);
+      expect(state.draft.name, 'Can');
+      expect(state.draft.email, 'can@ornek.com');
+    });
+
+    test('auth events refresh listeners; sign out clears the account',
+        () async {
+      final state = await withAuth();
+      auth.addUser('can@ornek.com', 'sifre123');
+      var notified = 0;
+      state.addListener(() => notified++);
+      await state.signIn(email: 'can@ornek.com', password: 'sifre123');
+      await state.signOut();
+      await pumpEventQueue();
+      expect(state.isSignedIn, isFalse);
+      expect(notified, greaterThanOrEqualTo(2));
+    });
+
+    test('a password-recovery link raises a one-shot flag', () async {
+      final state = await withAuth();
+      auth.emitPasswordRecovery();
+      await pumpEventQueue();
+      expect(state.takePendingPasswordRecovery(), isTrue);
+      expect(state.takePendingPasswordRecovery(), isFalse);
+    });
+
+    test('failures surface as AuthFailure', () async {
+      final state = await withAuth();
+      await expectLater(
+        state.signIn(email: 'kimse@ornek.com', password: 'sifre123'),
+        throwsA(isA<AuthFailure>().having(
+            (f) => f.code, 'code', AuthFailureCode.invalidCredentials)),
+      );
+    });
+
+    test('signing out keeps the local diary (B6 handles cleanup)', () async {
+      final state = await withAuth();
+      auth.addUser('can@ornek.com', 'sifre123');
+      await state.signIn(email: 'can@ornek.com', password: 'sifre123');
+      await state.addFoodToMeal(MealType.lunch, menemen, 1);
+      await state.signOut();
+      expect(state.todayEntries, hasLength(1));
+    });
+  });
+
+  group('profile sync (B3)', () {
+    late FakeAuthService auth;
+    late FakeSyncBackend cloud;
+
+    Future<AppState> syncing({bool signIn = true, bool consent = true}) async {
+      auth = FakeAuthService()..addUser('ayse@ornek.com', 'sifre123');
+      final state = AppState.forTesting()
+        ..clock = (() => now)
+        ..auth = auth
+        ..syncBackend = cloud;
+      addTearDown(state.dispose);
+      await state.load();
+      if (signIn) {
+        await state.signIn(email: 'ayse@ornek.com', password: 'sifre123');
+      }
+      if (consent) await state.giveCloudConsent();
+      return state;
+    }
+
+    Future<void> completeSetup(AppState state) async {
+      state.draft
+        ..name = 'Ayşe'
+        ..gender = Gender.female
+        ..age = 27
+        ..heightCm = 168
+        ..weightKg = 70
+        ..activityLevel = ActivityLevel.moderate
+        ..goal = WeightGoal.lose
+        ..weeklyPaceKg = 0.5;
+      await state.completeSetup();
+    }
+
+    setUp(() => cloud = FakeSyncBackend());
+
+    test('nothing is sent without the cloud consent', () async {
+      final state = await syncing(consent: false);
+      await completeSetup(state);
+      await state.syncProfile();
+      expect(cloud.fetches + cloud.pushes, 0);
+      expect(state.hasCloudConsent, isFalse);
+    });
+
+    test('nothing is sent while signed out', () async {
+      final state = await syncing(signIn: false);
+      await completeSetup(state);
+      await state.syncProfile();
+      expect(cloud.fetches + cloud.pushes, 0);
+    });
+
+    test('a profile made on this device is pushed', () async {
+      final state = await syncing();
+      await completeSetup(state);
+      await state.syncProfile();
+      expect(cloud.profile?.calorieGoal, 1704);
+      expect(cloud.profile?.gender, Gender.female);
+      expect(cloud.profile?.weightKg, 70);
+    });
+
+    test('a fresh device pulls the profile, goals and health consent',
+        () async {
+      cloud.profile = ProfileSnapshot(
+        createdAt: 1,
+        updatedAt: 2,
+        name: 'Ayşe',
+        email: 'ayse@ornek.com',
+        gender: Gender.female,
+        age: 27,
+        heightCm: 168,
+        weightKg: 69.5,
+        activityLevel: ActivityLevel.light,
+        weightGoal: WeightGoal.lose,
+        goalWeightKg: 64,
+        weeklyPaceKg: 0.25,
+        calorieGoal: 1650,
+        proteinGoalG: 125,
+        carbsGoalG: 170,
+        fatGoalG: 50,
+        allergies: const ['gluten'],
+        allergyNote: '',
+        consentVersion: kConsentVersion,
+        consentAt: DateTime(2026, 9, 1).millisecondsSinceEpoch,
+      );
+      final state = await syncing();
+      await state.syncProfile();
+
+      expect(state.setupComplete, isTrue);
+      expect(state.user.calorieGoal, 1650);
+      expect(state.user.weightKg, 69.5);
+      expect(state.activityLevel, ActivityLevel.light);
+      expect(state.hasConsent, isTrue);
+      expect(state.allergies.allergens.map((a) => a.name), ['gluten']);
+
+      // ...and it survives a restart.
+      final again = await loaded();
+      expect(again.setupComplete, isTrue);
+      expect(again.user.calorieGoal, 1650);
+    });
+
+    test('later edits are pushed; the newer side wins', () async {
+      final state = await syncing();
+      await completeSetup(state);
+      await state.syncProfile();
+
+      now = now.add(const Duration(minutes: 5));
+      await state.updateGoals(
+        goal: WeightGoal.lose,
+        goalWeightKg: 63,
+        weeklyPaceKg: 0.5,
+        calorieGoal: 1600,
+        proteinG: 120,
+        carbsG: 170,
+        fatG: 50,
+      );
+      await state.syncProfile();
+      expect(cloud.profile?.calorieGoal, 1600);
+
+      // Another device changed it later still.
+      cloud.profile = cloud.profile!.copyWith(
+          calorieGoal: 1550,
+          updatedAt: cloud.profile!.updatedAt + 60000);
+      await state.syncProfile();
+      expect(state.user.calorieGoal, 1550);
+    });
+
+    test('a failing cloud never breaks the app', () async {
+      final state = await syncing();
+      await completeSetup(state);
+      cloud.failWith = Exception('offline');
+      await state.syncProfile(); // must not throw
+      expect(state.user.calorieGoal, 1704);
+    });
+
+    test('revoking the cloud consent stops syncing', () async {
+      final state = await syncing();
+      await state.revokeCloudConsent();
+      await completeSetup(state);
+      await state.syncProfile();
+      expect(cloud.pushes, 0);
+      expect((await loaded()).hasCloudConsent, isFalse);
     });
   });
 }

@@ -34,19 +34,31 @@ class UserProfile {
   final double weightKg;
   final double goalWeightKg;
 
-  UserProfile copyWith({double? weightKg, int? streakDays}) {
+  UserProfile copyWith({
+    String? name,
+    String? initials,
+    String? email,
+    double? weightKg,
+    int? streakDays,
+    int? calorieGoal,
+    int? proteinGoalG,
+    int? carbsGoalG,
+    int? fatGoalG,
+    double? heightCm,
+    double? goalWeightKg,
+  }) {
     return UserProfile(
-      name: name,
-      initials: initials,
-      email: email,
+      name: name ?? this.name,
+      initials: initials ?? this.initials,
+      email: email ?? this.email,
       streakDays: streakDays ?? this.streakDays,
-      calorieGoal: calorieGoal,
-      proteinGoalG: proteinGoalG,
-      carbsGoalG: carbsGoalG,
-      fatGoalG: fatGoalG,
-      heightCm: heightCm,
+      calorieGoal: calorieGoal ?? this.calorieGoal,
+      proteinGoalG: proteinGoalG ?? this.proteinGoalG,
+      carbsGoalG: carbsGoalG ?? this.carbsGoalG,
+      fatGoalG: fatGoalG ?? this.fatGoalG,
+      heightCm: heightCm ?? this.heightCm,
       weightKg: weightKg ?? this.weightKg,
-      goalWeightKg: goalWeightKg,
+      goalWeightKg: goalWeightKg ?? this.goalWeightKg,
     );
   }
 

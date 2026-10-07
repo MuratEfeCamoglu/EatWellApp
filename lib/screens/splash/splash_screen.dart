@@ -40,7 +40,19 @@ class _SplashScreenState extends State<SplashScreen> {
     _navigated = true;
     final next =
         AppState.instance.setupComplete ? AppRoutes.main : AppRoutes.onboarding;
-    Navigator.of(context).pushReplacementNamed(next);
+    // Replace this splash route specifically, not whatever is on top: a
+    // password-reset link may already have pushed the "new password"
+    // screen over the splash, and it must stay in front.
+    final self = ModalRoute.of(context);
+    final newRoute = MaterialPageRoute<void>(
+      settings: RouteSettings(name: next),
+      builder: AppRoutes.routes[next]!,
+    );
+    if (self == null) {
+      Navigator.of(context).pushReplacement(newRoute);
+    } else {
+      Navigator.of(context).replace(oldRoute: self, newRoute: newRoute);
+    }
   }
 
   @override

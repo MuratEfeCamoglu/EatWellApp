@@ -6,6 +6,13 @@ targets:
       drift_dev:
         generate_for:
           - lib/data/db/**
+        options:
+          # Lets `dart run drift_dev make-migrations` dump each schema
+          # version and generate migration tests (CLAUDE.md §8).
+          databases:
+            app_database: lib/data/db/app_database.dart
+          schema_dir: drift_schemas/
+          test_dir: test/drift/
       drift_dev:preparing_builder:
         generate_for:
           - lib/data/db/**
