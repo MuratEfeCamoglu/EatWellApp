@@ -824,4 +824,81 @@ void main() {
       expect((await loaded()).hasCloudConsent, isFalse);
     });
   });
+
+  group('push sync (B4)', () {
+    late FakeAuthService auth;
+    late FakeSyncBackend cloud;
+
+    Future<AppState> start({bool consent = true}) async {
+      auth = FakeAuthService()..addUser('ayse@ornek.com', 'sifre123');
+      cloud = FakeSyncBackend();
+      final state = AppState.forTesting()
+        ..clock = (() => now)
+        ..auth = auth
+        ..syncBackend = cloud
+        ..syncDelay = const Duration(milliseconds: 1);
+      addTearDown(state.dispose);
+      await state.load(db: memoryDb());
+      await state.signIn(email: 'ayse@ornek.com', password: 'sifre123');
+      if (consent) await state.giveCloudConsent();
+      return state;
+    }
+
+    test('a logged food reaches the cloud and the status says so', () async {
+      final state = await start();
+      await state.addFoodToMeal(MealType.lunch, menemen, 1);
+      await state.syncNow();
+      expect(cloud.table('food_log_entries').values.single['food_name'],
+          'Menemen');
+      expect(state.syncStatus, SyncStatus.upToDate);
+      expect(state.lastSyncedAt, now);
+    });
+
+    test('writes are sent automatically after a short delay', () async {
+      final state = await start();
+      await state.setWaterGlasses(4);
+      await state.logWeight(70.2);
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      await state.syncNow(); // waits for any run in progress
+      expect(cloud.table('water_logs').values.single['glasses'], 4);
+      expect(cloud.table('weight_entries').values.single['kg'], 70.2);
+    });
+
+    test('data logged before signing in is uploaded once consent is given',
+        () async {
+      final state = await start(consent: false);
+      await state.addFoodToMeal(MealType.dinner, menemen, 2);
+      expect(cloud.tables, isEmpty);
+      await state.giveCloudConsent();
+      expect(cloud.table('food_log_entries'), hasLength(1));
+    });
+
+    test('without consent nothing is sent and the status is off', () async {
+      final state = await start(consent: false);
+      await state.addFoodToMeal(MealType.lunch, menemen, 1);
+      await state.syncNow();
+      expect(cloud.tables, isEmpty);
+      expect(state.syncStatus, SyncStatus.off);
+    });
+
+    test('a failure is reported and the next attempt catches up', () async {
+      final state = await start();
+      cloud.failWith = Exception('offline');
+      await state.addFoodToMeal(MealType.lunch, menemen, 1);
+      await state.syncNow();
+      expect(state.syncStatus, SyncStatus.error);
+
+      cloud.failWith = null;
+      await state.syncNow();
+      expect(state.syncStatus, SyncStatus.upToDate);
+      expect(cloud.table('food_log_entries'), hasLength(1));
+    });
+
+    test('signing out turns the status off', () async {
+      final state = await start();
+      await state.syncNow();
+      await state.signOut();
+      expect(state.syncStatus, SyncStatus.off);
+    });
+  });
 }

@@ -4,6 +4,7 @@ import 'package:drift_flutter/drift_flutter.dart';
 import 'app_database.steps.dart';
 import 'daos/custom_food_dao.dart';
 import 'daos/food_log_dao.dart';
+import 'daos/sync_dao.dart';
 import 'daos/water_dao.dart';
 import 'daos/weight_dao.dart';
 import 'tables.dart';
@@ -15,7 +16,7 @@ part 'app_database.g.dart';
 /// [AppState], which goes through the repositories.
 @DriftDatabase(
   tables: [FoodLogEntries, WaterLogs, WeightEntries, CustomFoods, SyncState],
-  daos: [FoodLogDao, WaterDao, WeightDao, CustomFoodDao],
+  daos: [FoodLogDao, WaterDao, WeightDao, CustomFoodDao, SyncDao],
 )
 class AppDatabase extends _$AppDatabase {
   /// The real database file, `denge.sqlite` in the documents directory.

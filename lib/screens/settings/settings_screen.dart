@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../data/app_state.dart';
 import '../../router.dart';
+import '../auth/cloud_consent_screen.dart' show syncStatusLabel;
 import '../../theme/app_colors.dart';
 import '../../widgets/app_back_button.dart';
 import '../../widgets/section_card.dart';
@@ -206,8 +207,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 child: _NavRow(
                                   icon: Icons.cloud_outlined,
                                   title: 'Bulut yedekleme',
-                                  trailingText:
-                                      state.hasCloudConsent ? 'Açık' : 'Kapalı',
+                                  trailingText: syncStatusLabel(state.syncStatus),
                                   onTap: () => Navigator.of(context)
                                       .push(AppRoutes.pushCloudConsent()),
                                 ),

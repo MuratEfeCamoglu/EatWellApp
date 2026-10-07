@@ -327,5 +327,25 @@ void main() {
       await tapVisible(tester, find.text('Yedeklemeyi kapat'));
       expect(state.hasCloudConsent, isFalse);
     });
+
+    testWidgets('"Şimdi eşitle" runs a sync and shows when it happened',
+        (tester) async {
+      auth.addUser('can@ornek.com', 'sifre123');
+      await pump(tester, const CloudConsentScreen());
+      await tester.runAsync(() async {
+        await state.signIn(email: 'can@ornek.com', password: 'sifre123');
+        await state.giveCloudConsent();
+      });
+      await tester.pump();
+      final before = cloud.fetches;
+
+      await tester.runAsync(() async {
+        await tester.tap(find.text('Şimdi eşitle'));
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+      });
+      await tester.pump();
+      expect(cloud.fetches, greaterThan(before));
+      expect(find.textContaining('Son eşitleme: 7 Ekim 12:00'), findsOneWidget);
+    });
   });
 }

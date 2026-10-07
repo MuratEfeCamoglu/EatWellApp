@@ -49,7 +49,15 @@ class DengeApp extends StatefulWidget {
   State<DengeApp> createState() => _DengeAppState();
 }
 
-class _DengeAppState extends State<DengeApp> {
+class _DengeAppState extends State<DengeApp> with WidgetsBindingObserver {
+  /// Back in the foreground: catch up on the day change and sync.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      AppState.instance.onResumed();
+    }
+  }
+
   /// A password-reset link opened the app: ask for the new password.
   void _onAppStateChanged() {
     if (AppState.instance.takePendingPasswordRecovery()) {
@@ -59,6 +67,7 @@ class _DengeAppState extends State<DengeApp> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     AppState.instance.removeListener(_onAppStateChanged);
     super.dispose();
   }
@@ -67,6 +76,7 @@ class _DengeAppState extends State<DengeApp> {
   void initState() {
     super.initState();
     AppState.instance.addListener(_onAppStateChanged);
+    WidgetsBinding.instance.addObserver(this);
     final error = AppState.instance.storageError;
     if (error != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {

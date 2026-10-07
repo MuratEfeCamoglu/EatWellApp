@@ -5,6 +5,15 @@ import '../../data/app_state.dart';
 import '../../widgets/form_parts.dart';
 import '../../widgets/section_card.dart';
 
+/// Settings row / status line wording for each [SyncStatus].
+String syncStatusLabel(SyncStatus s) => switch (s) {
+      SyncStatus.off => 'Kapalı',
+      SyncStatus.pending => 'Açık',
+      SyncStatus.syncing => 'Eşitleniyor…',
+      SyncStatus.upToDate => 'Güncel',
+      SyncStatus.error => 'Eşitlenemedi',
+    };
+
 const _months = [
   'Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran',
   'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık',
@@ -23,6 +32,22 @@ class CloudConsentScreen extends StatefulWidget {
 }
 
 class _CloudConsentScreenState extends State<CloudConsentScreen> {
+  static String _statusLine(AppState state) {
+    final at = state.lastSyncedAt;
+    final last = at == null
+        ? 'Henüz eşitlenmedi'
+        : 'Son eşitleme: ${at.day} ${_months[at.month - 1]} '
+            '${at.hour.toString().padLeft(2, '0')}:'
+            '${at.minute.toString().padLeft(2, '0')}';
+    return switch (state.syncStatus) {
+      SyncStatus.syncing => 'Eşitleniyor…',
+      SyncStatus.error =>
+        'Son deneme başarısız oldu (internet yok olabilir); otomatik olarak '
+            'tekrar denenecek. $last',
+      _ => last,
+    };
+  }
+
   bool _ticked = false;
   bool _busy = false;
 
@@ -90,11 +115,35 @@ class _CloudConsentScreenState extends State<CloudConsentScreen> {
                       if (given && consentAt != null) ...[
                         SectionCard(
                           padding: const EdgeInsets.all(16),
-                          child: Text(
-                            'Bulut yedekleme açık · ${consentAt.day} '
-                            '${_months[consentAt.month - 1]} ${consentAt.year} '
-                            'tarihinde onay verdin.',
-                            style: theme.textTheme.bodyLarge,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Bulut yedekleme açık · ${consentAt.day} '
+                                '${_months[consentAt.month - 1]} ${consentAt.year} '
+                                'tarihinde onay verdin.',
+                                style: theme.textTheme.bodyLarge,
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                _statusLine(state),
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: state.syncStatus == SyncStatus.error
+                                      ? theme.colorScheme.error
+                                      : null,
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              OutlinedButton.icon(
+                                onPressed: state.syncStatus == SyncStatus.syncing
+                                    ? null
+                                    : () => context.read<AppState>().syncNow(),
+                                style: OutlinedButton.styleFrom(
+                                    minimumSize: const Size(0, 48)),
+                                icon: const Icon(Icons.sync_rounded),
+                                label: const Text('Şimdi eşitle'),
+                              ),
+                            ],
                           ),
                         ),
                         const SizedBox(height: 20),

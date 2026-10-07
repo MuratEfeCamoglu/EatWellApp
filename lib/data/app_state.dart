@@ -20,13 +20,30 @@ import 'repositories/water_repository.dart';
 import 'repositories/weight_repository.dart';
 import 'stats/daily_summary.dart';
 import 'stats/streak.dart';
+import 'package:drift/drift.dart' show TableUpdateQuery;
+
 import 'sync/profile_snapshot.dart';
 import 'sync/sync_backend.dart';
+import 'sync/sync_engine.dart';
 
 // Screens import these through app_state.dart.
 export 'profile_enums.dart';
 
 enum TextScaleOption { small, normal, large, extraLarge }
+
+/// Cloud backup state shown in Settings.
+enum SyncStatus {
+  /// Not signed in, no cloud consent, or a local-only build.
+  off,
+
+  /// On, but no run has finished yet in this session.
+  pending,
+  syncing,
+  upToDate,
+
+  /// The last run failed (usually offline); it is retried automatically.
+  error,
+}
 
 extension TextScaleOptionValue on TextScaleOption {
   double get scale {
@@ -119,6 +136,7 @@ class AppState extends ChangeNotifier {
   static const _kProfileUpdatedAt = 'profile_updated_at';
   static const _kCloudConsentVersion = 'cloud_consent_version';
   static const _kCloudConsentAt = 'cloud_consent_at';
+  static const _kLastSyncedAt = 'last_synced_at';
 
   /// Version of the cloud-storage consent text (CLAUDE.md §13.5). Separate
   /// from the health-data consent: the app works fully without the cloud,
@@ -182,6 +200,24 @@ class AppState extends ChangeNotifier {
   Future<void>? _profileSync;
   bool _profileSyncAgain = false;
 
+  // ---- push sync (B4)
+  bool get _syncEnabled =>
+      syncBackend != null && isSignedIn && hasCloudConsent;
+  SyncStatus _syncStatus = SyncStatus.pending;
+  SyncStatus get syncStatus => _syncEnabled ? _syncStatus : SyncStatus.off;
+
+  /// When the last sync run finished successfully.
+  DateTime? lastSyncedAt;
+
+  /// Quiet period after a local write before it is sent, so a burst of
+  /// edits goes out in one run (CLAUDE.md §13.4). Tests shorten it.
+  Duration syncDelay = const Duration(seconds: 5);
+  Timer? _syncTimer;
+  Future<void>? _syncRun;
+  bool _syncAgain = false;
+  int _syncFailures = 0;
+  StreamSubscription<Object?>? _tablesSub;
+
   /// Schedules the actual OS notifications; `main` installs the platform
   /// implementation, tests keep the no-op or a fake.
   ReminderScheduler reminders = const NoopReminderScheduler();
@@ -241,7 +277,7 @@ class AppState extends ChangeNotifier {
         ..email = user.email;
     }
     notifyListeners();
-    await syncProfile();
+    await syncNow();
   }
 
   // ---------------------------------------------------------------------------
@@ -259,7 +295,7 @@ class AppState extends ChangeNotifier {
       prefs.setString(_kCloudConsentVersion, kCloudConsentVersion),
       prefs.setString(_kCloudConsentAt, now.toIso8601String()),
     ]);
-    await syncProfile();
+    await syncNow();
   }
 
   /// Stops syncing. Data already in the cloud stays until the user deletes
@@ -422,8 +458,91 @@ class AppState extends ChangeNotifier {
   /// Ends the session. Local data stays on the device for now; clearing it
   /// on sign-out arrives with sync (CLAUDE.md §13.6, Aşama B6).
   Future<void> signOut() async {
+    _syncTimer?.cancel();
+    await _syncRun;
     await _auth.signOut();
     notifyListeners();
+  }
+
+  /// Called when the app comes back to the foreground.
+  Future<void> onResumed() async {
+    await rollOverDayIfNeeded();
+    await syncNow();
+  }
+
+  /// A local write happened: sync after [syncDelay] if anything is dirty.
+  void _scheduleSync({Duration? delay}) {
+    if (!_syncEnabled) return;
+    _syncTimer?.cancel();
+    _syncTimer = Timer(delay ?? syncDelay, () async {
+      final db = _db;
+      // The sync's own "synced" marks also show up as table updates; only
+      // start a run when something actually still has to go out.
+      if (db == null || !await _hasDirtyRows(db)) return;
+      unawaited(syncNow());
+    });
+  }
+
+  static Future<bool> _hasDirtyRows(AppDatabase db) async {
+    for (final table in db.userTables) {
+      if ((await db.syncDao.dirtyRows(table, limit: 1)).isNotEmpty) return true;
+    }
+    return false;
+  }
+
+  /// Runs a full sync now (profile, then local changes). Never throws; the
+  /// outcome is in [syncStatus]. A failure is retried with growing pauses
+  /// (30 s, 1 min, 2 min … up to 15 min). Concurrent calls share one run.
+  Future<void> syncNow() {
+    final backend = syncBackend;
+    if (backend == null || !_syncEnabled) {
+      notifyListeners();
+      return Future.value();
+    }
+    final running = _syncRun;
+    if (running != null) {
+      _syncAgain = true;
+      return running;
+    }
+    _syncTimer?.cancel();
+    return _syncRun = () async {
+      _syncStatus = SyncStatus.syncing;
+      notifyListeners();
+      try {
+        do {
+          _syncAgain = false;
+          await syncProfile();
+          final db = _db;
+          if (db != null && _syncEnabled) {
+            final result = await SyncEngine(db, backend).push();
+            if (result.failed > 0) {
+              developer.log('${result.failed} rows rejected by the server');
+            }
+          }
+        } while (_syncAgain && _syncEnabled);
+        _syncFailures = 0;
+        _syncStatus = SyncStatus.upToDate;
+        lastSyncedAt = clock();
+        final prefs = await _prefsOrLoad();
+        await prefs.setString(_kLastSyncedAt, lastSyncedAt!.toIso8601String());
+      } catch (e, st) {
+        developer.log('Sync failed', error: e, stackTrace: st);
+        _syncFailures++;
+        _syncStatus = SyncStatus.error;
+        final backoff = Duration(seconds: 30 * (1 << (_syncFailures - 1).clamp(0, 5)));
+        _scheduleRetry(backoff < const Duration(minutes: 15)
+            ? backoff
+            : const Duration(minutes: 15));
+      } finally {
+        _syncRun = null;
+        notifyListeners();
+      }
+    }();
+  }
+
+  void _scheduleRetry(Duration delay) {
+    _syncTimer?.cancel();
+    _syncTimer = Timer(delay, () => unawaited(syncNow()));
   }
 
   /// Throws [AuthFailure].
@@ -638,6 +757,8 @@ class AppState extends ChangeNotifier {
     _cloudConsentVersion = prefs.getString(_kCloudConsentVersion);
     final cloudAt = prefs.getString(_kCloudConsentAt);
     cloudConsentAt = cloudAt == null ? null : DateTime.tryParse(cloudAt);
+    final syncedAt = prefs.getString(_kLastSyncedAt);
+    lastSyncedAt = syncedAt == null ? null : DateTime.tryParse(syncedAt);
     final memberSinceStr = prefs.getString(_kMemberSince);
     memberSince = memberSinceStr == null ? null : DateTime.tryParse(memberSinceStr);
     if (setupComplete) {
@@ -659,7 +780,7 @@ class AppState extends ChangeNotifier {
     await _loadWeights(prefs);
     await _loadCustomFoods();
     notifyListeners();
-    unawaited(syncProfile());
+    unawaited(syncNow());
     if (notificationSettings.anyEnabled) {
       // Re-schedule on every launch (time zone or OS state may have
       // changed); never prompts — permission was asked when turned on.
@@ -815,6 +936,9 @@ class AppState extends ChangeNotifier {
     _profileUpdatedAt = 0;
     _cloudConsentVersion = null;
     cloudConsentAt = null;
+    _syncTimer?.cancel();
+    lastSyncedAt = null;
+    _syncStatus = SyncStatus.pending;
     try {
       await reminders.apply(notificationSettings); // cancels everything
     } catch (e, st) {
@@ -922,6 +1046,10 @@ class AppState extends ChangeNotifier {
             error: e, stackTrace: st);
       }
       _db = db;
+      await _tablesSub?.cancel();
+      _tablesSub = db
+          .tableUpdates(TableUpdateQuery.onAllTables(db.userTables))
+          .listen((_) => _scheduleSync());
       _foodLog = FoodLogRepository(db);
       _water = WaterRepository(db);
       _weights = WeightRepository(db);
@@ -1004,6 +1132,8 @@ class AppState extends ChangeNotifier {
 
   @override
   void dispose() {
+    _syncTimer?.cancel();
+    _tablesSub?.cancel();
     _authSub?.cancel();
     _todaySub?.cancel();
     _midnightTimer?.cancel();
