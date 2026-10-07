@@ -12,7 +12,7 @@ rızası verirse veriler Supabase'e yedeklenir (§13). Rıza yoksa hiçbir veri 
 ## 2. Komutlar
 
 | İş | Komut |
-|---|---|
+| --- | --- |
 | Drift kod üretimi | `dart run build_runner build --delete-conflicting-outputs` |
 | Kod üretimi (izleme) | `dart run build_runner watch --delete-conflicting-outputs` |
 | Şema dökümü (migration testi için) | `dart run drift_dev make-migrations` |
@@ -27,9 +27,11 @@ Ortamda `flutter` yoksa komutu çalıştırmış gibi davranma, çalıştırıla
 1. **Veritabanı:** `drift` + `drift_flutter` (SQLite). Dosya adı `denge.sqlite`, uygulamanın
    belgeler dizininde durur. `drift_flutter`'ın `driftDatabase(name: 'denge')` yardımcısı kullanılır.
 2. **Katmanlar** (ekranlar veritabanını hiçbir zaman doğrudan görmez):
-   ```
+
+   ```text
    Ekranlar ──► AppState ──► Repository ──► DAO ──► Drift / SQLite
    ```
+
    - **DAO** (`lib/data/db/daos/`): SQL sorguları. Drift tiplerini döner.
    - **Repository** (`lib/data/repositories/`): Drift satırlarını uygulama modellerine çevirir,
      UUID ve zaman damgası üretir.
@@ -56,7 +58,7 @@ Ortamda `flutter` yoksa komutu çalıştırmış gibi davranma, çalıştırıla
 ### 5.1 Tüm kullanıcı tablolarında ortak sütunlar
 
 | Sütun | Tip | Açıklama |
-|---|---|---|
+| --- | --- | --- |
 | `id` | TEXT, PK | UUID v4, cihazda üretilir (`uuid` paketi) |
 | `created_at` | INTEGER | Oluşturulma zamanı, UTC milisaniye |
 | `updated_at` | INTEGER | Son değişiklik, UTC milisaniye. Her güncellemede yenilenir |
@@ -201,6 +203,7 @@ Her migration'dan sonra `supabase/tests/rls_test.sql` (`ALL PASSED` dönmeli; te
 Advisors'ın `delete_my_account` için verdiği "SECURITY DEFINER" uyarısı bilinçlidir.
 
 Koddan anlaşılmayan kurallar:
+
 - İstemcinin fiziksel silme yetkisi yok (DELETE izni ve politikası yok); silme her zaman
   `deleted_at` ile, fiziksel silme yalnızca `delete_my_account()` içinde.
 - Su `(user_id, date)` üzerinde tekildir ve `upsert_water` RPC'siyle yazılır; dönen satırın `id`'si
@@ -211,6 +214,7 @@ Koddan anlaşılmayan kurallar:
 ### 13.3 Durum
 
 Aşama B1–B3 tamamlandı (ayrıntılar git geçmişinde). Alınan ve korunması gereken kararlar:
+
 - Yerel şema v2: `server_updated_at` sütunu ve `sync_state (entity, pulled_until)`; geçiş testleri
   `test/drift/` altında. Oturum açıkken 30 günlük temizlik yalnızca buluta ulaşmış silmeleri
   (`synced_at >= deleted_at`) kalıcı siler.
