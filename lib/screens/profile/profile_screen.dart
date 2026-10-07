@@ -65,9 +65,10 @@ class ProfileScreen extends StatelessWidget {
         ? _thousands(user.calorieGoal)
         : 'Haftada ${_fmt1(weeklyPace)} kg · ${_thousands(user.calorieGoal)}';
 
-    final daysLogged = state.hasLoggedFoodToday ? 1 : 0;
-    final badgeFirstStep = state.hasLoggedFoodToday;
-    final badgeStreak7 = user.streakDays >= 7;
+    // Badges and stats are derived from the diary, never stored.
+    final daysLogged = state.loggedDaysCount;
+    final badgeFirstStep = daysLogged >= 1;
+    final badgeStreak7 = state.streakDays >= 7;
     final badgeWaterMaster = state.waterGlasses >= MockData.waterGlassesGoal;
     final badgeProteinHunter =
         user.proteinGoalG > 0 && state.proteinConsumedG >= user.proteinGoalG;
@@ -168,7 +169,7 @@ class ProfileScreen extends StatelessWidget {
                             child: Row(
                               children: [
                                 _StatColumn(
-                                    value: '${user.streakDays}',
+                                    value: '${state.streakDays}',
                                     label: 'gün seri'),
                                 _StatColumn(value: '$daysLogged', label: 'gün kayıt'),
                                 _StatColumn(value: '$unlockedBadges', label: 'rozet'),

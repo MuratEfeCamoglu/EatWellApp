@@ -298,18 +298,18 @@ uygulama açılıyor. Bir aşama bitmeden sonrakine geçme.
 
 ### Aşama 4: Seri ve rozetler
 
-- [ ] `lib/data/stats/streak.dart`:
+- [x] `lib/data/stats/streak.dart`:
       `int currentStreak(Set<String> loggedDates, DateTime now)`. Kural: Bugünden geriye doğru
       **en az bir yiyecek kaydı olan** ardışık günler sayılır. Bugün henüz kayıt yoksa seri
       dünden itibaren sayılır (bugün kayıt girilmediği için seri bozulmuş sayılmaz).
-- [ ] `AppState` içinde `streakDays` bu fonksiyondan türetilir. `UserProfile.streakDays` ve
+- [x] `AppState` içinde `streakDays` bu fonksiyondan türetilir. `UserProfile.streakDays` ve
       `user_streak` tercihi artık kullanılmaz (okumayı kaldır, alanı model uyumluluğu için bırakabilirsin).
-- [ ] Rozetler (`profile_screen.dart`) türetilmiş değerlere bağlanır:
+- [x] Rozetler (`profile_screen.dart`) türetilmiş değerlere bağlanır:
   - *İlk adım:* en az 1 günlük kaydı var
   - *7 gün seri:* `streakDays >= 7`
   - *Su ustası:* bugün su hedefi tamam
   - *Protein avcısı:* bugün protein hedefi tamam
-- [ ] **Testler (sabit `now` ile):** kayıt yok → 0, sadece bugün → 1, dün + bugün → 2,
+- [x] **Testler (sabit `now` ile):** kayıt yok → 0, sadece bugün → 1, dün + bugün → 2,
       dün var bugün yok → 1, arada boş gün → seri orada kırılır, ay/yıl geçişi.
 
 **Kabul:** Art arda günlerde kayıt girilince seri artıyor, bir gün atlanınca sıfırlanıyor.

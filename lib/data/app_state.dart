@@ -13,6 +13,7 @@ import 'repositories/food_log_repository.dart';
 import 'repositories/water_repository.dart';
 import 'repositories/weight_repository.dart';
 import 'stats/daily_summary.dart';
+import 'stats/streak.dart';
 
 enum Gender { female, male }
 
@@ -107,7 +108,6 @@ class AppState extends ChangeNotifier {
   static const _kName = 'user_name';
   static const _kEmail = 'user_email';
   static const _kInitials = 'user_initials';
-  static const _kStreak = 'user_streak';
   static const _kCalorieGoal = 'user_calorie_goal';
   static const _kProteinGoal = 'user_protein_goal';
   static const _kCarbsGoal = 'user_carbs_goal';
@@ -209,6 +209,19 @@ class AppState extends ChangeNotifier {
   int get caloriesConsumedToday => _todaySummary.kcal;
 
   bool get hasLoggedFoodToday => todayEntries.isNotEmpty;
+
+  /// Days (`yyyy-MM-dd`) with at least one diary entry, from the database.
+  Set<String> _loggedDates = const {};
+
+  Set<String> get _datesForStats => _foodLog == null
+      ? {if (todayEntries.isNotEmpty) _todayKey}
+      : _loggedDates;
+
+  /// Current logging streak, always derived from the diary (never stored).
+  int get streakDays => currentStreak(_datesForStats, clock());
+
+  /// Number of distinct days with at least one diary entry.
+  int get loggedDaysCount => _datesForStats.length;
 
   /// Sets today's glasses (clamped to the goal). Shown immediately; if the
   /// write fails the previous value comes back and the error is rethrown.
@@ -333,7 +346,8 @@ class AppState extends ChangeNotifier {
         name: prefs.getString(_kName) ?? '',
         initials: prefs.getString(_kInitials) ?? '',
         email: prefs.getString(_kEmail) ?? '',
-        streakDays: prefs.getInt(_kStreak) ?? 0,
+        // The old `user_streak` pref is no longer read; see [streakDays].
+        streakDays: 0,
         calorieGoal: prefs.getInt(_kCalorieGoal) ?? 0,
         proteinGoalG: prefs.getInt(_kProteinGoal) ?? 0,
         carbsGoalG: prefs.getInt(_kCarbsGoal) ?? 0,
@@ -407,6 +421,7 @@ class AppState extends ChangeNotifier {
     } else {
       try {
         _setTodayEntries(await repo.entriesForDate(_todayKey));
+        _loggedDates = await repo.datesWithEntries();
         _waterGlasses = await _water!.glassesFor(_todayKey);
       } catch (e, st) {
         developer.log('Loading today failed', error: e, stackTrace: st);
@@ -621,7 +636,6 @@ class AppState extends ChangeNotifier {
       prefs.setString(_kName, user.name),
       prefs.setString(_kInitials, user.initials),
       prefs.setString(_kEmail, user.email),
-      prefs.setInt(_kStreak, user.streakDays),
       prefs.setInt(_kCalorieGoal, user.calorieGoal),
       prefs.setInt(_kProteinGoal, user.proteinGoalG),
       prefs.setInt(_kCarbsGoal, user.carbsGoalG),
@@ -666,6 +680,7 @@ class AppState extends ChangeNotifier {
 
   Future<void> _refreshToday(FoodLogRepository repo) async {
     _setTodayEntries(await repo.entriesForDate(_todayKey));
+    _loggedDates = await repo.datesWithEntries();
   }
 
   /// Soft-deletes a diary entry of any day. Throws if the write fails.

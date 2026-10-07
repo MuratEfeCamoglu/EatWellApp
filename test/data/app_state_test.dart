@@ -242,4 +242,52 @@ void main() {
       expect(await db.weightDao.history(), isEmpty);
     });
   });
+
+  group('streak', () {
+    test('counts consecutive logged days and ignores the old pref',
+        () async {
+      SharedPreferences.setMockInitialValues({'user_streak': 42});
+      final db = memoryDb();
+      for (final day in [4, 5, 6]) {
+        now = DateTime(2026, 10, day, 12);
+        final s = await loaded(db: db, autoDispose: false);
+        await s.addFoodToMeal(MealType.lunch, menemen, 1);
+        s.dispose();
+      }
+
+      now = DateTime(2026, 10, 7, 8);
+      final state = await loaded(db: db);
+      expect(state.streakDays, 3, reason: 'today not logged yet');
+      expect(state.loggedDaysCount, 3);
+
+      await state.addFoodToMeal(MealType.breakfast, menemen, 1);
+      expect(state.streakDays, 4);
+      expect(state.loggedDaysCount, 4);
+
+      await state.deleteEntry(state.todayEntries.single.id);
+      expect(state.streakDays, 3);
+    });
+
+    test('a skipped day resets the streak', () async {
+      final db = memoryDb();
+      now = DateTime(2026, 10, 4, 12);
+      final s = await loaded(db: db, autoDispose: false);
+      await s.addFoodToMeal(MealType.lunch, menemen, 1);
+      s.dispose();
+
+      now = DateTime(2026, 10, 6, 12);
+      final state = await loaded(db: db);
+      expect(state.streakDays, 0);
+      await state.addFoodToMeal(MealType.lunch, menemen, 1);
+      expect(state.streakDays, 1);
+    });
+
+    test('without a database only today counts', () async {
+      final state = await loaded();
+      expect(state.streakDays, 0);
+      await state.addFoodToMeal(MealType.lunch, menemen, 1);
+      expect(state.streakDays, 1);
+      expect(state.loggedDaysCount, 1);
+    });
+  });
 }

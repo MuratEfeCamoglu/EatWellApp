@@ -260,7 +260,7 @@ class _ProgressScreenState extends State<ProgressScreen> {
                       icon: Icons.local_fire_department_rounded,
                       iconColor: dengeColors.streak,
                       iconBg: dengeColors.streakContainer,
-                      value: '${user.streakDays}',
+                      value: '${state.streakDays}',
                       label: 'gün seri',
                     ),
                   ),

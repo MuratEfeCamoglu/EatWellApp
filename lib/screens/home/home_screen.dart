@@ -147,7 +147,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               size: 20, color: colors.streak),
                           const SizedBox(width: 6),
                           Text(
-                            '${state.user.streakDays}',
+                            '${state.streakDays}',
                             style: TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.w800,
@@ -460,7 +460,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text('${state.user.streakDays} günlük seri!',
+                  Text('${state.streakDays} günlük seri!',
                       style: theme.textTheme.titleMedium),
                   Text('Bugünü de kaydet, seriyi koru.',
                       style: theme.textTheme.bodyMedium),
