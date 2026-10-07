@@ -1,0 +1,11 @@
+# Only the database layer uses drift code generation; limiting the inputs
+# keeps `build_runner` from analysing every screen.
+targets:
+  $default:
+    builders:
+      drift_dev:
+        generate_for:
+          - lib/data/db/**
+      drift_dev:preparing_builder:
+        generate_for:
+          - lib/data/db/**

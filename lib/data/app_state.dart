@@ -1,6 +1,9 @@
+import 'dart:developer' as developer;
+
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'db/app_database.dart';
 import 'health_consent.dart';
 import 'mock_data.dart';
 import 'models.dart';
@@ -85,6 +88,10 @@ class SetupDraft {
 class AppState extends ChangeNotifier {
   AppState._();
   static final AppState instance = AppState._();
+
+  /// A fresh, non-singleton instance so tests don't share state.
+  @visibleForTesting
+  AppState.forTesting();
 
   static const _kThemeMode = 'theme_mode';
   static const _kTextScale = 'text_scale';
@@ -193,9 +200,26 @@ class AppState extends ChangeNotifier {
 
   SharedPreferences? _prefs;
 
-  Future<void> load() async {
+  /// The on-device database, or null when running without one (widget
+  /// tests that never call `load(db: ...)`); every DB-backed feature then
+  /// silently falls back to in-memory behaviour.
+  AppDatabase? _db;
+
+  bool get hasDatabase => _db != null;
+
+  /// Turkish, user-facing message set when the database couldn't be
+  /// opened. The app keeps working in memory and the file is never
+  /// deleted automatically (CLAUDE.md §8).
+  String? storageError;
+
+  /// Source of "now" for everything date-dependent; tests replace it with
+  /// a fixed clock. Only this outermost layer ever calls [DateTime.now].
+  DateTime Function() clock = DateTime.now;
+
+  Future<void> load({AppDatabase? db}) async {
     final prefs = await SharedPreferences.getInstance();
     _prefs = prefs;
+    if (db != null) await _attachDatabase(db);
 
     final themeName = prefs.getString(_kThemeMode);
     themeMode = switch (themeName) {
@@ -248,6 +272,22 @@ class AppState extends ChangeNotifier {
       weightHistory.add(WeightEntry(DateTime.now(), user.weightKg));
     }
     notifyListeners();
+  }
+
+  Future<void> _attachDatabase(AppDatabase db) async {
+    try {
+      // Drift opens lazily; a trivial query forces the file to be created
+      // (and any open/migration error to surface) right here.
+      await db.customSelect('SELECT 1').get();
+      _db = db;
+      storageError = null;
+    } catch (e, st) {
+      developer.log('Database open failed', error: e, stackTrace: st);
+      _db = null;
+      storageError =
+          'Kayıtların saklandığı veritabanı açılamadı. Uygulamayı kullanmaya '
+          'devam edebilirsin ama bu oturumdaki kayıtlar kaydedilmeyecek.';
+    }
   }
 
   void setThemeMode(ThemeMode mode) {

@@ -218,18 +218,18 @@ uygulama açılıyor. Bir aşama bitmeden sonrakine geçme.
 
 ### Aşama 0: Altyapı
 
-- [ ] `pubspec.yaml` dosyasına ekle:
+- [x] `pubspec.yaml` dosyasına ekle:
   - `dependencies`: `drift`, `drift_flutter`, `path_provider`, `uuid`
   - `dev_dependencies`: `drift_dev`, `build_runner`
-- [ ] `lib/data/db/tables.dart`: `SyncColumns` mixin'i ve §5'teki dört tablo.
-- [ ] `lib/data/db/app_database.dart`: `AppDatabase` sınıfı, `schemaVersion = 1`, iki constructor:
+- [x] `lib/data/db/tables.dart`: `SyncColumns` mixin'i ve §5'teki dört tablo.
+- [x] `lib/data/db/app_database.dart`: `AppDatabase` sınıfı, `schemaVersion = 1`, iki constructor:
   - `AppDatabase()`: gerçek dosya (`driftDatabase(name: 'denge')`)
   - `AppDatabase.forTesting(QueryExecutor e)`: testler için (`NativeDatabase.memory()`)
-- [ ] `lib/data/db/date_key.dart`: `String dateKey(DateTime local)` ve `DateTime parseDateKey(String)`.
-- [ ] `build_runner` çalıştır, `.g.dart` dosyasını commit'le.
-- [ ] `main.dart`: `AppDatabase` oluştur ve `AppState`'e ver (`AppState.instance.attachDatabase(db)`
+- [x] `lib/data/db/date_key.dart`: `String dateKey(DateTime local)` ve `DateTime parseDateKey(String)`.
+- [x] `build_runner` çalıştır, `.g.dart` dosyasını commit'le.
+- [x] `main.dart`: `AppDatabase` oluştur ve `AppState`'e ver (`AppState.instance.attachDatabase(db)`
       veya `load(db: ...)`). `AppState` veritabanı olmadan da çalışabilmeli (mevcut widget testleri bozulmasın).
-- [ ] **Test:** Bellek içi veritabanı açılıyor, dört tablo oluşuyor. `dateKey` için gece yarısı sınır testi.
+- [x] **Test:** Bellek içi veritabanı açılıyor, dört tablo oluşuyor. `dateKey` için gece yarısı sınır testi.
 
 **Kabul:** Uygulama eskisi gibi açılıyor, davranış değişmedi, veritabanı dosyası oluştu.
 

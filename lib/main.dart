@@ -2,17 +2,40 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'data/app_state.dart';
+import 'data/db/app_database.dart';
 import 'router.dart';
 import 'theme/app_theme.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await AppState.instance.load();
+  await AppState.instance.load(db: AppDatabase());
   runApp(const DengeApp());
 }
 
-class DengeApp extends StatelessWidget {
+/// Lets [DengeApp] show app-level messages (e.g. a database error) without
+/// a screen's own [BuildContext].
+final _messengerKey = GlobalKey<ScaffoldMessengerState>();
+
+class DengeApp extends StatefulWidget {
   const DengeApp({super.key});
+
+  @override
+  State<DengeApp> createState() => _DengeAppState();
+}
+
+class _DengeAppState extends State<DengeApp> {
+  @override
+  void initState() {
+    super.initState();
+    final error = AppState.instance.storageError;
+    if (error != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _messengerKey.currentState?.showSnackBar(
+          SnackBar(content: Text(error), duration: const Duration(seconds: 8)),
+        );
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -27,6 +50,7 @@ class DengeApp extends StatelessWidget {
           final (themeMode, reduceMotion, textScale) = settings;
           return MaterialApp(
             title: 'Denge',
+            scaffoldMessengerKey: _messengerKey,
             debugShowCheckedModeBanner: false,
             themeMode: themeMode,
             theme: AppTheme.light(reduceMotion: reduceMotion),
