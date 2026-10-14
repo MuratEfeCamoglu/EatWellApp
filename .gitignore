@@ -47,3 +47,4 @@ app.*.map.json
 # Supabase keys (passed with --dart-define-from-file); only the example is tracked.
 env/*.json
 !env/example.json
+/tool/screenshots/raw/
