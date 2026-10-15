@@ -121,6 +121,7 @@ Future<void> _shoot(
   Widget page, {
   bool dark = false,
   String? scrollToText,
+  bool fullPage = true,
 }) async {
   final state = AppState.instance;
   state.themeMode = dark ? ThemeMode.dark : ThemeMode.light;
@@ -134,15 +135,22 @@ Future<void> _shoot(
       home: KeyedSubtree(key: UniqueKey(), child: page),
     ),
   ));
-  for (var i = 0; i < 3; i++) {
-    await tester.pump(const Duration(milliseconds: 400));
-    // Asset images decode asynchronously; let them finish before capturing.
-    await tester.runAsync(() async {
-      for (final element in find.byType(Image).evaluate()) {
-        final image = (element.widget as Image).image;
-        await precacheImage(image, element);
-      }
-    });
+  await _settleImages(tester);
+  if (fullPage) {
+    // Grow the phone screen until the page's main list fits without
+    // scrolling, so the mockup shows the whole screen top to bottom. Long
+    // lazy lists (the food catalog) are capped.
+    for (var i = 0; i < 4; i++) {
+      final extent = _longestScrollExtent(tester);
+      if (extent < 1) break;
+      final size = tester.view.physicalSize;
+      final height =
+          (size.height + extent * tester.view.devicePixelRatio).clamp(0, _maxHeight);
+      if (height <= size.height) break;
+      tester.view.physicalSize = Size(size.width, height.toDouble());
+      await tester.pump(const Duration(milliseconds: 400));
+      await _settleImages(tester);
+    }
   }
   if (scrollToText != null) {
     // Bring a section further down the page to the top of the screen.
@@ -154,6 +162,38 @@ Future<void> _shoot(
   await tester.pump(const Duration(seconds: 2));
   await expectLater(
       find.byType(MaterialApp), matchesGoldenFile('raw/$name.png'));
+  tester.view.physicalSize = _phoneSize;
+}
+
+const _phoneSize = Size(1170, 2532);
+const _maxHeight = 2532 * 2.0;
+
+Future<void> _settleImages(WidgetTester tester) async {
+  for (var i = 0; i < 3; i++) {
+    await tester.pump(const Duration(milliseconds: 400));
+    // Asset images decode asynchronously; let them finish before capturing.
+    await tester.runAsync(() async {
+      for (final element in find.byType(Image).evaluate()) {
+        final image = (element.widget as Image).image;
+        await precacheImage(image, element);
+      }
+    });
+  }
+}
+
+/// How far the longest vertical, on-screen scrollable can still scroll.
+double _longestScrollExtent(WidgetTester tester) {
+  var longest = 0.0;
+  for (final element in find.byType(Scrollable).evaluate()) {
+    final state = (element as StatefulElement).state as ScrollableState;
+    if (state.axisDirection != AxisDirection.down) continue;
+    final box = element.renderObject as RenderBox?;
+    if (box == null || !box.hasSize || box.size.height < 200) continue;
+    final position = state.position;
+    if (!position.hasContentDimensions) continue;
+    longest = position.maxScrollExtent > longest ? position.maxScrollExtent : longest;
+  }
+  return longest;
 }
 
 void main() {
@@ -161,7 +201,7 @@ void main() {
     // Tests draw elevation as flat outlines by default; show real shadows.
     debugDisableShadows = false;
     tester.view
-      ..physicalSize = const Size(1170, 2532)
+      ..physicalSize = _phoneSize
       ..devicePixelRatio = 3
       ..padding = const FakeViewPadding(top: 141, bottom: 102)
       ..viewPadding = const FakeViewPadding(top: 141, bottom: 102);
@@ -198,9 +238,9 @@ void main() {
     }
     await _shoot(tester, '20_home_dark', const MainShell(), dark: true);
     await _shoot(tester, '21_diary_dark', const MainShell(initialIndex: 1), dark: true);
-    await _shoot(tester, '22_home_water', const MainShell(), scrollToText: 'Su');
+    await _shoot(tester, '22_home_water', const MainShell(), scrollToText: 'Su', fullPage: false);
     await _shoot(tester, '23_home_water_dark', const MainShell(),
-        dark: true, scrollToText: 'Su');
+        dark: true, scrollToText: 'Su', fullPage: false);
     await tester.pumpWidget(const SizedBox());
     await tester.pump(const Duration(seconds: 6));
     debugDisableShadows = true;
