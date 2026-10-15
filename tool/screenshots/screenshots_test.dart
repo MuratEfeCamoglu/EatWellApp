@@ -120,6 +120,7 @@ Future<void> _shoot(
   String name,
   Widget page, {
   bool dark = false,
+  String? scrollToText,
 }) async {
   final state = AppState.instance;
   state.themeMode = dark ? ThemeMode.dark : ThemeMode.light;
@@ -142,6 +143,13 @@ Future<void> _shoot(
         await precacheImage(image, element);
       }
     });
+  }
+  if (scrollToText != null) {
+    // Bring a section further down the page to the top of the screen.
+    final target = find.text(scrollToText).first;
+    await tester.ensureVisible(target);
+    Scrollable.ensureVisible(tester.element(target), alignment: 0.08);
+    await tester.pump(const Duration(milliseconds: 400));
   }
   await tester.pump(const Duration(seconds: 2));
   await expectLater(
@@ -190,6 +198,9 @@ void main() {
     }
     await _shoot(tester, '20_home_dark', const MainShell(), dark: true);
     await _shoot(tester, '21_diary_dark', const MainShell(initialIndex: 1), dark: true);
+    await _shoot(tester, '22_home_water', const MainShell(), scrollToText: 'Su');
+    await _shoot(tester, '23_home_water_dark', const MainShell(),
+        dark: true, scrollToText: 'Su');
     await tester.pumpWidget(const SizedBox());
     await tester.pump(const Duration(seconds: 6));
     debugDisableShadows = true;
