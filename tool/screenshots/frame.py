@@ -42,5 +42,5 @@ def frame(path, dark):
     return canvas.resize((int(canvas.width*S),int(canvas.height*S)),Image.LANCZOS)
 for p in sorted(glob.glob(src+'/*.png')):
     n=os.path.basename(p)
-    frame(p,'dark' in n).save(os.path.join(out,n),optimize=True)
+    frame(p,'dark' in n or 'barcode' in n).save(os.path.join(out,n),optimize=True)
 print('ok')

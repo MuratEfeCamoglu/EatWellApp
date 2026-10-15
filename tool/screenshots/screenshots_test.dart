@@ -4,7 +4,8 @@
 //   flutter test tool/screenshots/screenshots_test.dart --update-goldens
 //
 // Output: tool/screenshots/raw/<name>.png (1170×2532, iPhone-sized), then
-// `python3 tool/screenshots/frame.py tool/screenshots/raw docs/mockups`.
+// `python3 tool/screenshots/camera_fill.py tool/screenshots/raw/2[45]_barcode_*.png`
+// and `python3 tool/screenshots/frame.py tool/screenshots/raw docs/mockups`.
 //
 // `flutter test` normally replaces every font without an explicit family
 // (button labels, RichText) with box glyphs. For readable output the
@@ -12,6 +13,7 @@
 // omits `--use-test-fonts` (packages/flutter_tools/lib/src/test/
 // flutter_tester_device.dart) and Roboto installed as the system sans-serif.
 // ignore_for_file: invalid_use_of_visible_for_testing_member
+import 'dart:async';
 import 'dart:io';
 
 import 'package:denge/data/app_state.dart';
@@ -24,6 +26,7 @@ import 'package:denge/data/recipes.dart';
 import 'package:denge/screens/auth/cloud_consent_screen.dart';
 import 'package:denge/screens/auth/health_consent_screen.dart';
 import 'package:denge/screens/auth/sign_up_screen.dart';
+import 'package:denge/screens/diary/barcode_screen.dart';
 import 'package:denge/screens/food/custom_food_screen.dart';
 import 'package:denge/screens/food/food_detail_screen.dart';
 import 'package:denge/screens/main_shell.dart';
@@ -38,9 +41,11 @@ import 'package:denge/screens/setup/setup_goal_screen.dart';
 import 'package:denge/screens/setup/setup_result_screen.dart';
 import 'package:denge/theme/app_theme.dart';
 import 'package:drift/native.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -122,6 +127,7 @@ Future<void> _shoot(
   bool dark = false,
   String? scrollToText,
   bool fullPage = true,
+  Future<void> Function()? afterBuild,
 }) async {
   final state = AppState.instance;
   state.themeMode = dark ? ThemeMode.dark : ThemeMode.light;
@@ -136,6 +142,10 @@ Future<void> _shoot(
     ),
   ));
   await _settleImages(tester);
+  if (afterBuild != null) {
+    await afterBuild();
+    await _settleImages(tester);
+  }
   if (fullPage) {
     // Grow the phone screen until the page's main list fits without
     // scrolling, so the mockup shows the whole screen top to bottom. Long
@@ -241,8 +251,80 @@ void main() {
     await _shoot(tester, '22_home_water', const MainShell(), scrollToText: 'Su', fullPage: false);
     await _shoot(tester, '23_home_water_dark', const MainShell(),
         dark: true, scrollToText: 'Su', fullPage: false);
+    await _shootBarcode(tester);
     await tester.pumpWidget(const SizedBox());
     await tester.pump(const Duration(seconds: 6));
     debugDisableShadows = true;
   });
+}
+
+/// The scanner needs a camera, so its plugin channels are faked: the camera
+/// "starts" with an empty preview (frame.py paints a photo behind it) and a
+/// scan of a catalog barcode can be sent in.
+Future<void> _shootBarcode(WidgetTester tester) async {
+  final messenger = tester.binding.defaultBinaryMessenger;
+  const method = MethodChannel('dev.steenbakker.mobile_scanner/scanner/method');
+  const events = EventChannel('dev.steenbakker.mobile_scanner/scanner/event');
+  const orientation =
+      EventChannel('dev.steenbakker.mobile_scanner/scanner/deviceOrientation');
+  final sinks = <MockStreamHandlerEventSink>[];
+  messenger.setMockMethodCallHandler(method, (call) async => switch (call.method) {
+        'state' => 1,
+        'request' => true,
+        'start' => <String, Object?>{
+            'textureId': 1,
+            'numberOfCameras': 1,
+            'currentTorchState': 0,
+            'cameraDirection': 1,
+            'size': <String, Object?>{'width': 1080.0, 'height': 1920.0},
+          },
+        _ => null,
+      });
+  messenger.setMockStreamHandler(
+      events, MockStreamHandler.inline(onListen: (_, sink) => sinks.add(sink)));
+  messenger.setMockStreamHandler(orientation, MockStreamHandler.inline(onListen: (_, _) {}));
+  // The iOS code path of the plugin needs no Android surface details.
+  debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+  try {
+    await _ignoringDoubleStart(() =>
+        _shoot(tester, '24_barcode_scan', const BarcodeScreen(), fullPage: false));
+    await _ignoringDoubleStart(() => _shoot(tester, '25_barcode_found',
+            const BarcodeScreen(), fullPage: false, afterBuild: () async {
+      sinks.last.success(<String, Object?>{
+        'name': 'barcode',
+        'data': [
+          <String, Object?>{'rawValue': MockData.barcodeCatalog.keys.first, 'format': 32},
+        ],
+      });
+      await tester.pump(const Duration(milliseconds: 400));
+    }));
+  } finally {
+    debugDefaultTargetPlatformOverride = null;
+    messenger.setMockMethodCallHandler(method, null);
+    messenger.setMockStreamHandler(events, null);
+    messenger.setMockStreamHandler(orientation, null);
+  }
+}
+
+/// The screen and the MobileScanner widget both start the camera and the
+/// plugin rejects the second call with `controllerInitializing`; on a phone
+/// that only gets logged. Any other error still fails the run.
+Future<void> _ignoringDoubleStart(Future<void> Function() body) async {
+  Object? failure;
+  StackTrace? failureStack;
+  final done = Completer<void>();
+  runZonedGuarded(() async {
+    await body();
+    done.complete();
+  }, (error, stack) {
+    if (error is MobileScannerException &&
+        error.errorCode == MobileScannerErrorCode.controllerInitializing) {
+      return;
+    }
+    failure ??= error;
+    failureStack ??= stack;
+    if (!done.isCompleted) done.complete();
+  });
+  await done.future;
+  if (failure != null) Error.throwWithStackTrace(failure!, failureStack!);
 }
